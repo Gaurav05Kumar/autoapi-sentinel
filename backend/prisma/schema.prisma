@@ -8,52 +8,63 @@ datasource db {
 }
 
 model User {
-  id        String    @id @default(uuid())
-  email     String    @unique
+  id        String   @id @default(uuid())
+  email     String   @unique
   name      String?
   password  String
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  projects  Project[]
+  projects Project[]
 }
 
 model Project {
-  id          String     @id @default(uuid())
+  id          String   @id @default(uuid())
   name        String
   description String?
   userId      String
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  endpoints   Endpoint[]
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoints Endpoint[]
 }
 
 model Endpoint {
-  id          String       @id @default(uuid())
-  name        String
-  method      String
-  url         String
-  headers     Json?
-  body        Json?
-  projectId   String
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id      String @id @default(uuid())
+  name    String
+  method  String
+  url     String
+  headers Json?
+  body    Json?
+
+  expectedStatus  Int?
+  maxResponseTime Int?
+
+  projectId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   testResults TestResult[]
 }
- 
- model TestResult {
-  id           String   @id @default(uuid())
-  endpointId   String
+
+model TestResult {
+  id         String @id @default(uuid())
+  endpointId String
+
   statusCode   Int?
   responseTime Int
   success      Boolean
+
   responseBody Json?
   error        String?
-  createdAt    DateTime @default(now())
+
+  bugDetected Boolean @default(false)
+  bugType     String?
+  bugMessage  String?
+
+  createdAt DateTime @default(now())
 
   endpoint Endpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
 }

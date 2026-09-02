@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -10,13 +11,18 @@ import {
 
 import { EndpointsService } from './endpoints.service';
 import { AuthGuard } from '../auth/auth.guard';
+import { Prisma } from '../generated/prisma/client';
 
 @Controller('projects/:projectId/endpoints')
 @UseGuards(AuthGuard)
 export class EndpointsController {
   constructor(
     private readonly endpointsService: EndpointsService,
-  ) { }
+  ) {}
+
+  // ============================================================
+  // CREATE ENDPOINT
+  // ============================================================
 
   @Post()
   create(
@@ -27,7 +33,9 @@ export class EndpointsController {
       method: string;
       url: string;
       headers?: Record<string, string>;
-      body?: unknown;
+      body?: Prisma.InputJsonValue;
+      expectedStatus?: number;
+      maxResponseTime?: number;
     },
     @Req() req: any,
   ) {
@@ -39,8 +47,14 @@ export class EndpointsController {
       body.url,
       body.headers,
       body.body,
+      body.expectedStatus,
+      body.maxResponseTime,
     );
   }
+
+  // ============================================================
+  // GET ALL ENDPOINTS
+  // ============================================================
 
   @Get()
   findAll(
@@ -53,6 +67,10 @@ export class EndpointsController {
     );
   }
 
+  // ============================================================
+  // RUN ENDPOINT TEST
+  // ============================================================
+
   @Post(':endpointId/run')
   run(
     @Param('endpointId') endpointId: string,
@@ -64,12 +82,54 @@ export class EndpointsController {
     );
   }
 
+  // ============================================================
+  // GET ENDPOINT TEST HISTORY
+  // ============================================================
+
   @Get(':endpointId/results')
   getResults(
     @Param('endpointId') endpointId: string,
     @Req() req: any,
   ) {
     return this.endpointsService.getResults(
+      endpointId,
+      req.user.sub,
+    );
+  }
+
+  // ============================================================
+  // DELETE INDIVIDUAL TEST RESULT
+  //
+  // URL:
+  // DELETE /projects/:projectId/endpoints/:endpointId/results/:resultId
+  // ============================================================
+
+  @Delete(':endpointId/results/:resultId')
+  removeResult(
+    @Param('endpointId') endpointId: string,
+    @Param('resultId') resultId: string,
+    @Req() req: any,
+  ) {
+    return this.endpointsService.removeResult(
+      endpointId,
+      resultId,
+      req.user.sub,
+    );
+  }
+
+  // ============================================================
+  // DELETE ENDPOINT
+  //
+  // URL:
+  // DELETE /projects/:projectId/endpoints/:endpointId
+  // ============================================================
+
+  @Delete(':endpointId')
+  remove(
+    @Param('endpointId') endpointId: string,
+    @Req() req: any,
+  ) {
+    return this.endpointsService.remove(
       endpointId,
       req.user.sub,
     );
