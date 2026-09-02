@@ -13,7 +13,7 @@ export class EndpointsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly httpService: HttpService,
-  ) {}
+  ) { }
 
   async create(
     projectId: string,
@@ -21,6 +21,8 @@ export class EndpointsService {
     name: string,
     method: string,
     url: string,
+    headers?: Record<string, string>,
+    body?: unknown,
   ) {
     const project =
       await this.prisma.project.findFirst({
@@ -41,6 +43,8 @@ export class EndpointsService {
         name,
         method,
         url,
+        headers,
+        body,
         projectId,
       },
     });
@@ -98,6 +102,12 @@ export class EndpointsService {
         this.httpService.request({
           method: endpoint.method,
           url: endpoint.url,
+          headers:
+            endpoint.headers &&
+              typeof endpoint.headers === 'object'
+              ? (endpoint.headers as Record<string, string>)
+              : undefined,
+          data: endpoint.body ?? undefined,
           validateStatus: () => true,
         }),
       );
@@ -164,5 +174,35 @@ export class EndpointsService {
         createdAt: result.createdAt,
       };
     }
+
+  }
+  async getResults(
+    endpointId: string,
+    userId: string,
+  ) {
+    const endpoint =
+      await this.prisma.endpoint.findFirst({
+        where: {
+          id: endpointId,
+          project: {
+            userId,
+          },
+        },
+      });
+
+    if (!endpoint) {
+      throw new NotFoundException(
+        'Endpoint not found',
+      );
+    }
+
+    return this.prisma.testResult.findMany({
+      where: {
+        endpointId,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
   }
 }

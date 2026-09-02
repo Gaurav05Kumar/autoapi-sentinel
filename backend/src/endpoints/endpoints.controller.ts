@@ -16,7 +16,7 @@ import { AuthGuard } from '../auth/auth.guard';
 export class EndpointsController {
   constructor(
     private readonly endpointsService: EndpointsService,
-  ) {}
+  ) { }
 
   @Post()
   create(
@@ -26,6 +26,8 @@ export class EndpointsController {
       name: string;
       method: string;
       url: string;
+      headers?: Record<string, string>;
+      body?: unknown;
     },
     @Req() req: any,
   ) {
@@ -35,6 +37,8 @@ export class EndpointsController {
       body.name,
       body.method,
       body.url,
+      body.headers,
+      body.body,
     );
   }
 
@@ -48,14 +52,26 @@ export class EndpointsController {
       req.user.sub,
     );
   }
+
   @Post(':endpointId/run')
-run(
-  @Param('endpointId') endpointId: string,
-  @Req() req: any,
-) {
-  return this.endpointsService.run(
-    endpointId,
-    req.user.sub,
-  );
-}
+  run(
+    @Param('endpointId') endpointId: string,
+    @Req() req: any,
+  ) {
+    return this.endpointsService.run(
+      endpointId,
+      req.user.sub,
+    );
+  }
+
+  @Get(':endpointId/results')
+  getResults(
+    @Param('endpointId') endpointId: string,
+    @Req() req: any,
+  ) {
+    return this.endpointsService.getResults(
+      endpointId,
+      req.user.sub,
+    );
+  }
 }
