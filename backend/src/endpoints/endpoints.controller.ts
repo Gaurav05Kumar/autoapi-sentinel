@@ -18,7 +18,7 @@ import { Prisma } from '../generated/prisma/client';
 export class EndpointsController {
   constructor(
     private readonly endpointsService: EndpointsService,
-  ) {}
+  ) { }
 
   // ============================================================
   // CREATE ENDPOINT
@@ -81,6 +81,23 @@ export class EndpointsController {
       req.user.sub,
     );
   }
+  // ============================================================
+  // GET PROJECT TEST ANALYTICS
+  //
+  // URL:
+  // GET /projects/:projectId/endpoints/analytics
+  // ============================================================
+
+  @Get('analytics')
+  getAnalytics(
+    @Param('projectId') projectId: string,
+    @Req() req: any,
+  ) {
+    return this.endpointsService.getAnalytics(
+      projectId,
+      req.user.sub,
+    );
+  }
 
   // ============================================================
   // GET ENDPOINT TEST HISTORY
@@ -131,6 +148,20 @@ export class EndpointsController {
   ) {
     return this.endpointsService.remove(
       endpointId,
+      req.user.sub,
+    );
+  }
+  // ============================================================
+  // GET PROJECT TEST ANALYTICS
+  // ============================================================
+
+  @Get('analytics')
+  getAnalytics(
+    @Param('projectId') projectId: string,
+    @Req() req: any,
+  ) {
+    return this.endpointsService.getAnalytics(
+      projectId,
       req.user.sub,
     );
   }

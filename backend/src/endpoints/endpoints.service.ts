@@ -94,7 +94,7 @@ export class EndpointsService {
   }
 
   // ============================================================
-  // RUN ENDPOINT + AUTOMATIC BUG DETECTION
+  // RUN ENDPOINT + AI BUG ANALYSIS
   // ============================================================
 
   async run(
@@ -129,13 +129,11 @@ export class EndpointsService {
         await firstValueFrom(
           this.httpService.request({
             method: endpoint.method,
-
             url: endpoint.url,
 
             headers:
               endpoint.headers &&
-              typeof endpoint.headers ===
-                'object'
+              typeof endpoint.headers === 'object'
                 ? (endpoint.headers as Record<
                     string,
                     string
@@ -152,7 +150,7 @@ export class EndpointsService {
         );
 
       // --------------------------------------------------------
-      // RESPONSE TIME
+      // RESPONSE INFORMATION
       // --------------------------------------------------------
 
       const responseTime =
@@ -167,7 +165,7 @@ export class EndpointsService {
         statusCode < 400;
 
       // --------------------------------------------------------
-      // BUG VARIABLES
+      // AI SERVICE ANALYSIS
       // --------------------------------------------------------
 
       let bugDetected = false;
@@ -178,30 +176,52 @@ export class EndpointsService {
       let bugMessage: string | null =
         null;
 
-      // ========================================================
-      // STATUS CODE VALIDATION
-      // ========================================================
+      try {
+        const aiResponse =
+          await firstValueFrom(
+            this.httpService.post(
+              'http://127.0.0.1:8000/analyze',
+              {
+                statusCode,
+                responseTime,
+                responseBody:
+                  response.data,
+                expectedStatus:
+                  endpoint.expectedStatus,
+                maxResponseTime:
+                  endpoint.maxResponseTime,
+              },
+            ),
+          );
 
-      if (
-        endpoint.expectedStatus !==
-          null &&
-        endpoint.expectedStatus !==
-          undefined &&
-        statusCode !==
-          endpoint.expectedStatus
-      ) {
-        bugDetected = true;
+        const aiAnalysis =
+          aiResponse.data;
 
-        bugType = 'STATUS_CODE';
+        // Take bug analysis from AI service
+        bugDetected =
+          Boolean(
+            aiAnalysis.bugDetected,
+          );
+
+        bugType =
+          aiAnalysis.bugType ??
+          null;
 
         bugMessage =
-          `Expected status ${endpoint.expectedStatus} ` +
-          `but received ${statusCode}`;
+          aiAnalysis.message ??
+          null;
+
+      } catch (aiError) {
+        // AI service failure should not stop API testing.
+        console.error(
+          'AI service unavailable:',
+          aiError,
+        );
       }
 
-      // ========================================================
+      // --------------------------------------------------------
       // HTTP ERROR DETECTION
-      // ========================================================
+      // --------------------------------------------------------
 
       if (
         !bugDetected &&
@@ -215,74 +235,44 @@ export class EndpointsService {
           `API returned HTTP error status ${statusCode}`;
       }
 
-      // ========================================================
-      // RESPONSE TIME VALIDATION
-      // ========================================================
-
-      if (
-        endpoint.maxResponseTime !==
-          null &&
-        endpoint.maxResponseTime !==
-          undefined &&
-        responseTime >
-          endpoint.maxResponseTime
-      ) {
-        bugDetected = true;
-
-        if (!bugType) {
-          bugType = 'RESPONSE_TIME';
-
-          bugMessage =
-            `Response took ${responseTime}ms, ` +
-            `maximum allowed is ${endpoint.maxResponseTime}ms`;
-        } else {
-          bugMessage =
-            `${bugMessage}. ` +
-            `Response took ${responseTime}ms, ` +
-            `maximum allowed is ${endpoint.maxResponseTime}ms`;
-        }
-      }
-
-      // ========================================================
+      // --------------------------------------------------------
       // FINAL SUCCESS
-      // ========================================================
+      // --------------------------------------------------------
 
       const success =
         httpSuccess &&
         !bugDetected;
 
-      // ========================================================
+      // --------------------------------------------------------
       // SAVE TEST RESULT
-      // ========================================================
+      // --------------------------------------------------------
 
       const result =
-        await this.prisma.testResult.create(
-          {
-            data: {
-              endpointId:
-                endpoint.id,
+        await this.prisma.testResult.create({
+          data: {
+            endpointId:
+              endpoint.id,
 
-              statusCode,
+            statusCode,
 
-              responseTime,
+            responseTime,
 
-              success,
+            success,
 
-              responseBody:
-                response.data,
+            responseBody:
+              response.data,
 
-              bugDetected,
+            bugDetected,
 
-              bugType,
+            bugType,
 
-              bugMessage,
-            },
+            bugMessage,
           },
-        );
+        });
 
-      // ========================================================
+      // --------------------------------------------------------
       // RETURN RESULT
-      // ========================================================
+      // --------------------------------------------------------
 
       return {
         id: result.id,
@@ -320,6 +310,7 @@ export class EndpointsService {
         createdAt:
           result.createdAt,
       };
+
     } catch (error) {
       // ========================================================
       // REQUEST ERROR
@@ -334,34 +325,32 @@ export class EndpointsService {
           : 'Request failed';
 
       const result =
-        await this.prisma.testResult.create(
-          {
-            data: {
-              endpointId:
-                endpoint.id,
+        await this.prisma.testResult.create({
+          data: {
+            endpointId:
+              endpoint.id,
 
-              statusCode: null,
+            statusCode: null,
 
-              responseTime,
+            responseTime,
 
-              success: false,
+            success: false,
 
-              responseBody:
-                Prisma.JsonNull,
+            responseBody:
+              Prisma.JsonNull,
 
-              error:
-                errorMessage,
+            error:
+              errorMessage,
 
-              bugDetected: true,
+            bugDetected: true,
 
-              bugType:
-                'REQUEST_ERROR',
+            bugType:
+              'REQUEST_ERROR',
 
-              bugMessage:
-                errorMessage,
-            },
+            bugMessage:
+              errorMessage,
           },
-        );
+        });
 
       return {
         id: result.id,
@@ -440,6 +429,129 @@ export class EndpointsService {
   }
 
   // ============================================================
+  // GET PROJECT TEST ANALYTICS
+  // ============================================================
+
+  async getAnalytics(
+    projectId: string,
+    userId: string,
+  ) {
+    // Check project ownership
+    const project =
+      await this.prisma.project.findFirst({
+        where: {
+          id: projectId,
+          userId,
+        },
+      });
+
+    if (!project) {
+      throw new NotFoundException(
+        'Project not found',
+      );
+    }
+
+    // Get all test results
+    // belonging to this project
+    const results =
+      await this.prisma.testResult.findMany({
+        where: {
+          endpoint: {
+            projectId,
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+    // ----------------------------------------------------------
+    // BASIC STATISTICS
+    // ----------------------------------------------------------
+
+    const totalTests =
+      results.length;
+
+    const passedTests =
+      results.filter(
+        (result) =>
+          result.success,
+      ).length;
+
+    const failedTests =
+      results.filter(
+        (result) =>
+          !result.success,
+      ).length;
+
+    const bugsDetected =
+      results.filter(
+        (result) =>
+          result.bugDetected,
+      ).length;
+
+    // ----------------------------------------------------------
+    // SUCCESS RATE
+    // ----------------------------------------------------------
+
+    const successRate =
+      totalTests > 0
+        ? Number(
+            (
+              (passedTests /
+                totalTests) *
+              100
+            ).toFixed(2),
+          )
+        : 0;
+
+    // ----------------------------------------------------------
+    // BUG TYPE COUNTS
+    // ----------------------------------------------------------
+
+    const bugTypes = {
+      STATUS_CODE: 0,
+      HTTP_ERROR: 0,
+      RESPONSE_TIME: 0,
+      REQUEST_ERROR: 0,
+    };
+
+    results.forEach(
+      (result) => {
+        if (
+          result.bugType &&
+          result.bugType in
+            bugTypes
+        ) {
+          bugTypes[
+            result.bugType as keyof typeof bugTypes
+          ]++;
+        }
+      },
+    );
+
+    // ----------------------------------------------------------
+    // RETURN ANALYTICS
+    // ----------------------------------------------------------
+
+    return {
+      projectId,
+
+      totalTests,
+
+      passedTests,
+
+      failedTests,
+
+      bugsDetected,
+
+      successRate,
+
+      bugTypes,
+    };
+  }
+
+  // ============================================================
   // DELETE ENDPOINT
   // ============================================================
 
@@ -447,10 +559,7 @@ export class EndpointsService {
     endpointId: string,
     userId: string,
   ) {
-    // ----------------------------------------------------------
-    // VERIFY OWNERSHIP
-    // ----------------------------------------------------------
-
+    // Verify ownership
     const endpoint =
       await this.prisma.endpoint.findFirst({
         where: {
@@ -470,11 +579,8 @@ export class EndpointsService {
       );
     }
 
-    // ----------------------------------------------------------
-    // DELETE HISTORY + ENDPOINT
-    // IN ONE TRANSACTION
-    // ----------------------------------------------------------
-
+    // Delete history + endpoint
+    // in one transaction
     await this.prisma.$transaction(
       async (tx) => {
         await tx.testResult.deleteMany({
@@ -512,11 +618,8 @@ export class EndpointsService {
     resultId: string,
     userId: string,
   ) {
-    // ----------------------------------------------------------
-    // VERIFY RESULT BELONGS TO THIS ENDPOINT
-    // AND USER OWNS THE PROJECT
-    // ----------------------------------------------------------
-
+    // Verify result belongs to this endpoint
+    // and user owns the project
     const result =
       await this.prisma.testResult.findFirst({
         where: {
@@ -542,10 +645,7 @@ export class EndpointsService {
       );
     }
 
-    // ----------------------------------------------------------
-    // DELETE RESULT
-    // ----------------------------------------------------------
-
+    // Delete result
     await this.prisma.testResult.delete({
       where: {
         id: result.id,
