@@ -18,7 +18,7 @@ import { Prisma } from '../generated/prisma/client';
 export class EndpointsController {
   constructor(
     private readonly endpointsService: EndpointsService,
-  ) { }
+  ) {}
 
   // ============================================================
   // CREATE ENDPOINT
@@ -27,6 +27,7 @@ export class EndpointsController {
   @Post()
   create(
     @Param('projectId') projectId: string,
+
     @Body()
     body: {
       name: string;
@@ -37,6 +38,7 @@ export class EndpointsController {
       expectedStatus?: number;
       maxResponseTime?: number;
     },
+
     @Req() req: any,
   ) {
     return this.endpointsService.create(
@@ -68,20 +70,6 @@ export class EndpointsController {
   }
 
   // ============================================================
-  // RUN ENDPOINT TEST
-  // ============================================================
-
-  @Post(':endpointId/run')
-  run(
-    @Param('endpointId') endpointId: string,
-    @Req() req: any,
-  ) {
-    return this.endpointsService.run(
-      endpointId,
-      req.user.sub,
-    );
-  }
-  // ============================================================
   // GET PROJECT TEST ANALYTICS
   //
   // URL:
@@ -100,7 +88,28 @@ export class EndpointsController {
   }
 
   // ============================================================
+  // RUN ENDPOINT TEST
+  //
+  // URL:
+  // POST /projects/:projectId/endpoints/:endpointId/run
+  // ============================================================
+
+  @Post(':endpointId/run')
+  run(
+    @Param('endpointId') endpointId: string,
+    @Req() req: any,
+  ) {
+    return this.endpointsService.run(
+      endpointId,
+      req.user.sub,
+    );
+  }
+
+  // ============================================================
   // GET ENDPOINT TEST HISTORY
+  //
+  // URL:
+  // GET /projects/:projectId/endpoints/:endpointId/results
   // ============================================================
 
   @Get(':endpointId/results')
@@ -118,7 +127,8 @@ export class EndpointsController {
   // DELETE INDIVIDUAL TEST RESULT
   //
   // URL:
-  // DELETE /projects/:projectId/endpoints/:endpointId/results/:resultId
+  // DELETE
+  // /projects/:projectId/endpoints/:endpointId/results/:resultId
   // ============================================================
 
   @Delete(':endpointId/results/:resultId')
@@ -148,20 +158,6 @@ export class EndpointsController {
   ) {
     return this.endpointsService.remove(
       endpointId,
-      req.user.sub,
-    );
-  }
-  // ============================================================
-  // GET PROJECT TEST ANALYTICS
-  // ============================================================
-
-  @Get('analytics')
-  getAnalytics(
-    @Param('projectId') projectId: string,
-    @Req() req: any,
-  ) {
-    return this.endpointsService.getAnalytics(
-      projectId,
       req.user.sub,
     );
   }

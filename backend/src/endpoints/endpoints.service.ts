@@ -31,7 +31,10 @@ export class EndpointsService {
     expectedStatus?: number,
     maxResponseTime?: number,
   ) {
-    // Check project ownership
+    // ----------------------------------------------------------
+    // Check whether the project belongs to the logged-in user
+    // ----------------------------------------------------------
+
     const project =
       await this.prisma.project.findFirst({
         where: {
@@ -45,6 +48,10 @@ export class EndpointsService {
         'Project not found',
       );
     }
+
+    // ----------------------------------------------------------
+    // Create endpoint
+    // ----------------------------------------------------------
 
     return this.prisma.endpoint.create({
       data: {
@@ -68,7 +75,10 @@ export class EndpointsService {
     projectId: string,
     userId: string,
   ) {
+    // ----------------------------------------------------------
     // Check project ownership
+    // ----------------------------------------------------------
+
     const project =
       await this.prisma.project.findFirst({
         where: {
@@ -83,10 +93,15 @@ export class EndpointsService {
       );
     }
 
+    // ----------------------------------------------------------
+    // Return project endpoints
+    // ----------------------------------------------------------
+
     return this.prisma.endpoint.findMany({
       where: {
         projectId,
       },
+
       orderBy: {
         createdAt: 'desc',
       },
@@ -101,11 +116,15 @@ export class EndpointsService {
     endpointId: string,
     userId: string,
   ) {
+    // ----------------------------------------------------------
     // Check endpoint ownership
+    // ----------------------------------------------------------
+
     const endpoint =
       await this.prisma.endpoint.findFirst({
         where: {
           id: endpointId,
+
           project: {
             userId,
           },
@@ -118,19 +137,27 @@ export class EndpointsService {
       );
     }
 
+    // ----------------------------------------------------------
+    // Start timer
+    // ----------------------------------------------------------
+
     const startTime = Date.now();
 
     try {
-      // --------------------------------------------------------
-      // SEND API REQUEST
-      // --------------------------------------------------------
+      // ========================================================
+      // 1. SEND API REQUEST
+      // ========================================================
 
       const response =
         await firstValueFrom(
           this.httpService.request({
+            // HTTP method
             method: endpoint.method,
+
+            // API URL
             url: endpoint.url,
 
+            // Optional request headers
             headers:
               endpoint.headers &&
               typeof endpoint.headers === 'object'
@@ -140,18 +167,26 @@ export class EndpointsService {
                   >)
                 : undefined,
 
+            // Optional request body
             data:
               endpoint.body ??
               undefined,
 
-            // Allow 4xx/5xx so we can analyze them.
+            // --------------------------------------------------
+            // Important:
+            // Axios normally throws for 4xx/5xx.
+            //
+            // We don't want that because AI service should
+            // analyze those responses as well.
+            // --------------------------------------------------
+
             validateStatus: () => true,
           }),
         );
 
-      // --------------------------------------------------------
-      // RESPONSE INFORMATION
-      // --------------------------------------------------------
+      // ========================================================
+      // 2. RESPONSE INFORMATION
+      // ========================================================
 
       const responseTime =
         Date.now() - startTime;
@@ -159,14 +194,17 @@ export class EndpointsService {
       const statusCode =
         response.status;
 
-      // 200-399 = HTTP success
+      // --------------------------------------------------------
+      // HTTP success means 200-399
+      // --------------------------------------------------------
+
       const httpSuccess =
         statusCode >= 200 &&
         statusCode < 400;
 
-      // --------------------------------------------------------
-      // AI SERVICE ANALYSIS
-      // --------------------------------------------------------
+      // ========================================================
+      // 3. AI SERVICE ANALYSIS
+      // ========================================================
 
       let bugDetected = false;
 
@@ -177,27 +215,60 @@ export class EndpointsService {
         null;
 
       try {
+        // ------------------------------------------------------
+        // Send API execution result to AI service
+        // ------------------------------------------------------
+
         const aiResponse =
           await firstValueFrom(
             this.httpService.post(
               'http://127.0.0.1:8000/analyze',
               {
+                // ------------------------------------------------
+                // Request information
+                // ------------------------------------------------
+
+                method:
+                  endpoint.method,
+
+                url:
+                  endpoint.url,
+
+                // ------------------------------------------------
+                // Response information
+                // ------------------------------------------------
+
                 statusCode,
+
                 responseTime,
+
                 responseBody:
                   response.data,
+
+                // ------------------------------------------------
+                // Validation configuration
+                // ------------------------------------------------
+
                 expectedStatus:
                   endpoint.expectedStatus,
+
                 maxResponseTime:
                   endpoint.maxResponseTime,
               },
             ),
           );
 
+        // ------------------------------------------------------
+        // Get AI analysis
+        // ------------------------------------------------------
+
         const aiAnalysis =
           aiResponse.data;
 
-        // Take bug analysis from AI service
+        // ------------------------------------------------------
+        // Store AI result
+        // ------------------------------------------------------
+
         bugDetected =
           Boolean(
             aiAnalysis.bugDetected,
@@ -210,69 +281,65 @@ export class EndpointsService {
         bugMessage =
           aiAnalysis.message ??
           null;
-
       } catch (aiError) {
-        // AI service failure should not stop API testing.
+        // ------------------------------------------------------
+        // AI service failure should NOT stop API testing.
+        //
+        // The API request itself already succeeded.
+        // ------------------------------------------------------
+
         console.error(
           'AI service unavailable:',
           aiError,
         );
       }
 
-      // --------------------------------------------------------
-      // HTTP ERROR DETECTION
-      // --------------------------------------------------------
-
-      if (
-        !bugDetected &&
-        !httpSuccess
-      ) {
-        bugDetected = true;
-
-        bugType = 'HTTP_ERROR';
-
-        bugMessage =
-          `API returned HTTP error status ${statusCode}`;
-      }
-
-      // --------------------------------------------------------
-      // FINAL SUCCESS
-      // --------------------------------------------------------
+      // ========================================================
+      // 4. FINAL SUCCESS CALCULATION
+      // ========================================================
 
       const success =
         httpSuccess &&
         !bugDetected;
 
-      // --------------------------------------------------------
-      // SAVE TEST RESULT
-      // --------------------------------------------------------
+      // ========================================================
+      // 5. SAVE TEST RESULT
+      // ========================================================
 
       const result =
         await this.prisma.testResult.create({
           data: {
+            // Endpoint reference
             endpointId:
               endpoint.id,
 
+            // HTTP status
             statusCode,
 
+            // Response time in milliseconds
             responseTime,
 
+            // Final test status
             success,
 
+            // API response
             responseBody:
               response.data,
 
+            // AI bug detection
             bugDetected,
 
+            // AI bug category
             bugType,
 
+            // AI explanation
             bugMessage,
           },
         });
 
-      // --------------------------------------------------------
-      // RETURN RESULT
-      // --------------------------------------------------------
+      // ========================================================
+      // 6. RETURN TEST RESULT
+      // ========================================================
 
       return {
         id: result.id,
@@ -310,7 +377,6 @@ export class EndpointsService {
         createdAt:
           result.createdAt,
       };
-
     } catch (error) {
       // ========================================================
       // REQUEST ERROR
@@ -319,10 +385,18 @@ export class EndpointsService {
       const responseTime =
         Date.now() - startTime;
 
+      // --------------------------------------------------------
+      // Convert unknown error into readable message
+      // --------------------------------------------------------
+
       const errorMessage =
         error instanceof Error
           ? error.message
           : 'Request failed';
+
+      // --------------------------------------------------------
+      // Save failed request
+      // --------------------------------------------------------
 
       const result =
         await this.prisma.testResult.create({
@@ -351,6 +425,10 @@ export class EndpointsService {
               errorMessage,
           },
         });
+
+      // --------------------------------------------------------
+      // Return request error result
+      // --------------------------------------------------------
 
       return {
         id: result.id,
@@ -401,11 +479,15 @@ export class EndpointsService {
     endpointId: string,
     userId: string,
   ) {
+    // ----------------------------------------------------------
     // Check endpoint ownership
+    // ----------------------------------------------------------
+
     const endpoint =
       await this.prisma.endpoint.findFirst({
         where: {
           id: endpointId,
+
           project: {
             userId,
           },
@@ -418,10 +500,15 @@ export class EndpointsService {
       );
     }
 
+    // ----------------------------------------------------------
+    // Return test history
+    // ----------------------------------------------------------
+
     return this.prisma.testResult.findMany({
       where: {
         endpointId,
       },
+
       orderBy: {
         createdAt: 'desc',
       },
@@ -436,7 +523,10 @@ export class EndpointsService {
     projectId: string,
     userId: string,
   ) {
+    // ----------------------------------------------------------
     // Check project ownership
+    // ----------------------------------------------------------
+
     const project =
       await this.prisma.project.findFirst({
         where: {
@@ -451,8 +541,10 @@ export class EndpointsService {
       );
     }
 
-    // Get all test results
-    // belonging to this project
+    // ----------------------------------------------------------
+    // Get all test results belonging to this project
+    // ----------------------------------------------------------
+
     const results =
       await this.prisma.testResult.findMany({
         where: {
@@ -460,14 +552,15 @@ export class EndpointsService {
             projectId,
           },
         },
+
         orderBy: {
           createdAt: 'desc',
         },
       });
 
-    // ----------------------------------------------------------
+    // ==========================================================
     // BASIC STATISTICS
-    // ----------------------------------------------------------
+    // ==========================================================
 
     const totalTests =
       results.length;
@@ -490,9 +583,9 @@ export class EndpointsService {
           result.bugDetected,
       ).length;
 
-    // ----------------------------------------------------------
+    // ==========================================================
     // SUCCESS RATE
-    // ----------------------------------------------------------
+    // ==========================================================
 
     const successRate =
       totalTests > 0
@@ -505,34 +598,46 @@ export class EndpointsService {
           )
         : 0;
 
-    // ----------------------------------------------------------
+    // ==========================================================
     // BUG TYPE COUNTS
-    // ----------------------------------------------------------
+    // ==========================================================
 
-    const bugTypes = {
+    const bugTypes: Record<
+      string,
+      number
+    > = {
       STATUS_CODE: 0,
       HTTP_ERROR: 0,
       RESPONSE_TIME: 0,
+      EMPTY_RESPONSE: 0,
+      INVALID_RESPONSE: 0,
       REQUEST_ERROR: 0,
     };
 
+    // ----------------------------------------------------------
+    // Count each bug type
+    // ----------------------------------------------------------
+
     results.forEach(
       (result) => {
+        if (!result.bugType) {
+          return;
+        }
+
         if (
-          result.bugType &&
           result.bugType in
-            bugTypes
+          bugTypes
         ) {
           bugTypes[
-            result.bugType as keyof typeof bugTypes
+            result.bugType
           ]++;
         }
       },
     );
 
-    // ----------------------------------------------------------
+    // ==========================================================
     // RETURN ANALYTICS
-    // ----------------------------------------------------------
+    // ==========================================================
 
     return {
       projectId,
@@ -559,15 +664,20 @@ export class EndpointsService {
     endpointId: string,
     userId: string,
   ) {
-    // Verify ownership
+    // ----------------------------------------------------------
+    // Verify endpoint ownership
+    // ----------------------------------------------------------
+
     const endpoint =
       await this.prisma.endpoint.findFirst({
         where: {
           id: endpointId,
+
           project: {
             userId,
           },
         },
+
         select: {
           id: true,
         },
@@ -579,10 +689,13 @@ export class EndpointsService {
       );
     }
 
+    // ----------------------------------------------------------
     // Delete history + endpoint
-    // in one transaction
+    // ----------------------------------------------------------
+
     await this.prisma.$transaction(
       async (tx) => {
+        // Delete all test results
         await tx.testResult.deleteMany({
           where: {
             endpointId:
@@ -590,6 +703,7 @@ export class EndpointsService {
           },
         });
 
+        // Delete endpoint
         await tx.endpoint.delete({
           where: {
             id: endpoint.id,
@@ -597,6 +711,10 @@ export class EndpointsService {
         });
       },
     );
+
+    // ----------------------------------------------------------
+    // Return success
+    // ----------------------------------------------------------
 
     return {
       success: true,
@@ -618,8 +736,13 @@ export class EndpointsService {
     resultId: string,
     userId: string,
   ) {
-    // Verify result belongs to this endpoint
-    // and user owns the project
+    // ----------------------------------------------------------
+    // Verify:
+    //
+    // 1. Result belongs to endpoint
+    // 2. Endpoint belongs to user's project
+    // ----------------------------------------------------------
+
     const result =
       await this.prisma.testResult.findFirst({
         where: {
@@ -645,12 +768,19 @@ export class EndpointsService {
       );
     }
 
+    // ----------------------------------------------------------
     // Delete result
+    // ----------------------------------------------------------
+
     await this.prisma.testResult.delete({
       where: {
         id: result.id,
       },
     });
+
+    // ----------------------------------------------------------
+    // Return success
+    // ----------------------------------------------------------
 
     return {
       success: true,
