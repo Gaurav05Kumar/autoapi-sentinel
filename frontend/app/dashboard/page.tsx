@@ -13,6 +13,7 @@ type Endpoint = {
     name: string;
     method: string;
     url: string;
+    projectId?: string;
 };
 
 type TestResult = {
@@ -29,17 +30,48 @@ type TestResult = {
     createdAt: string;
 };
 
+type Analytics = {
+    totalTests: number;
+    passedTests: number;
+    failedTests: number;
+    bugsDetected: number;
+    successRate: number;
+    bugTypes: Record<string, number>;
+};
+
 export default function Dashboard() {
     const [projects, setProjects] = useState<Project[]>([]);
     const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
     const [results, setResults] = useState<TestResult[]>([]);
+
+    const [analytics, setAnalytics] = useState<Analytics>({
+        totalTests: 0,
+        passedTests: 0,
+        failedTests: 0,
+        bugsDetected: 0,
+        successRate: 0,
+        bugTypes: {},
+    });
+
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+
+    // =============================================================
+    // LOAD DASHBOARD DATA
+    // =============================================================
 
     useEffect(() => {
         async function loadDashboard() {
             try {
-                const token = localStorage.getItem("accessToken");
+                setLoading(true);
+                setError("");
+
+                // -------------------------------------------------
+                // AUTH TOKEN
+                // -------------------------------------------------
+
+                const token =
+                    localStorage.getItem("accessToken");
 
                 if (!token) {
                     window.location.href = "/";
@@ -50,100 +82,186 @@ export default function Dashboard() {
                     Authorization: `Bearer ${token}`,
                 };
 
-                // =====================================================
-                // 1. GET PROJECTS
-                // =====================================================
+                // -------------------------------------------------
+                // GET PROJECTS
+                // -------------------------------------------------
 
                 const projectsResponse = await fetch(
                     "http://localhost:5000/projects",
                     {
                         method: "GET",
                         headers: authHeaders,
-                    },
+                    }
                 );
 
-                const projectsData = await projectsResponse.json();
+                const projectsData =
+                    await projectsResponse.json();
 
                 if (!projectsResponse.ok) {
                     throw new Error(
                         projectsData.message ||
-                            "Failed to load projects",
+                            "Failed to load projects"
                     );
                 }
 
-                setProjects(projectsData);
+                const projectList =
+                    projectsData as Project[];
 
-                // =====================================================
-                // 2. GET ENDPOINTS FROM ALL PROJECTS
-                // =====================================================
+                setProjects(projectList);
+
+                // -------------------------------------------------
+                // STORAGE
+                // -------------------------------------------------
 
                 const allEndpoints: Endpoint[] = [];
-
-                for (const project of projectsData as Project[]) {
-                    const endpointResponse = await fetch(
-                        `http://localhost:5000/projects/${project.id}/endpoints`,
-                        {
-                            method: "GET",
-                            headers: authHeaders,
-                        },
-                    );
-
-                    const endpointData =
-                        await endpointResponse.json();
-
-                    if (!endpointResponse.ok) {
-                        continue;
-                    }
-
-                    allEndpoints.push(
-                        ...(endpointData as Endpoint[]),
-                    );
-                }
-
-                setEndpoints(allEndpoints);
-
-                // =====================================================
-                // 3. GET TEST RESULTS
-                // =====================================================
-
                 const allResults: TestResult[] = [];
 
-                for (const project of projectsData as Project[]) {
-                    const projectEndpoints =
-                        allEndpoints.filter(
-                            (endpoint) =>
-                                endpoint.id &&
-                                endpoint !== undefined,
-                        );
+                let totalTests = 0;
+                let passedTests = 0;
+                let failedTests = 0;
+                let bugsDetected = 0;
 
-                    for (const endpoint of projectEndpoints) {
-                        const resultResponse = await fetch(
-                            `http://localhost:5000/projects/${project.id}/endpoints/${endpoint.id}/results`,
+                const bugTypes: Record<string, number> = {};
+
+                // -------------------------------------------------
+                // PROCESS EACH PROJECT
+                // -------------------------------------------------
+
+                for (const project of projectList) {
+                    // =============================================
+                    // GET PROJECT ENDPOINTS
+                    // =============================================
+
+                    const endpointResponse =
+                        await fetch(
+                            `http://localhost:5000/projects/${project.id}/endpoints`,
                             {
                                 method: "GET",
                                 headers: authHeaders,
-                            },
+                            }
                         );
 
-                        const resultData =
-                            await resultResponse.json();
+                    let projectEndpoints: Endpoint[] = [];
+
+                    if (endpointResponse.ok) {
+                        const endpointData =
+                            await endpointResponse.json();
+
+                        projectEndpoints =
+                            endpointData as Endpoint[];
+
+                        allEndpoints.push(
+                            ...projectEndpoints.map(
+                                (endpoint) => ({
+                                    ...endpoint,
+                                    projectId: project.id,
+                                })
+                            )
+                        );
+                    }
+
+                    // =============================================
+                    // GET RESULTS FOR THIS PROJECT ONLY
+                    // =============================================
+
+                    for (const endpoint of projectEndpoints) {
+                        const resultResponse =
+                            await fetch(
+                                `http://localhost:5000/projects/${project.id}/endpoints/${endpoint.id}/results`,
+                                {
+                                    method: "GET",
+                                    headers: authHeaders,
+                                }
+                            );
 
                         if (!resultResponse.ok) {
                             continue;
                         }
 
+                        const resultData =
+                            await resultResponse.json();
+
                         allResults.push(
-                            ...(resultData as TestResult[]),
+                            ...(resultData as TestResult[])
+                        );
+                    }
+
+                    // =============================================
+                    // ANALYTICS
+                    // =============================================
+
+                    const analyticsResponse =
+                        await fetch(
+                            `http://localhost:5000/projects/${project.id}/endpoints/analytics`,
+                            {
+                                method: "GET",
+                                headers: authHeaders,
+                            }
+                        );
+
+                    if (analyticsResponse.ok) {
+                        const projectAnalytics =
+                            (await analyticsResponse.json()) as Analytics;
+
+                        totalTests +=
+                            projectAnalytics.totalTests || 0;
+
+                        passedTests +=
+                            projectAnalytics.passedTests || 0;
+
+                        failedTests +=
+                            projectAnalytics.failedTests || 0;
+
+                        bugsDetected +=
+                            projectAnalytics.bugsDetected || 0;
+
+                        Object.entries(
+                            projectAnalytics.bugTypes || {}
+                        ).forEach(
+                            ([bugType, count]) => {
+                                bugTypes[bugType] =
+                                    (bugTypes[bugType] || 0) +
+                                    Number(count);
+                            }
                         );
                     }
                 }
 
+                // -------------------------------------------------
+                // SUCCESS RATE
+                // -------------------------------------------------
+
+                const successRate =
+                    totalTests > 0
+                        ? Number(
+                              (
+                                  (passedTests /
+                                      totalTests) *
+                                  100
+                              ).toFixed(1)
+                          )
+                        : 0;
+
+                // -------------------------------------------------
+                // SAVE DATA
+                // -------------------------------------------------
+
+                setEndpoints(allEndpoints);
                 setResults(allResults);
+
+                setAnalytics({
+                    totalTests,
+                    passedTests,
+                    failedTests,
+                    bugsDetected,
+                    successRate,
+                    bugTypes,
+                });
             } catch (err) {
                 setError(
                     err instanceof Error
                         ? err.message
-                        : "Something went wrong",
+                        : "Something went wrong"
                 );
             } finally {
                 setLoading(false);
@@ -153,62 +271,37 @@ export default function Dashboard() {
         loadDashboard();
     }, []);
 
-    // =====================================================
-    // DASHBOARD CALCULATIONS
-    // =====================================================
-
-    const failedTests = results.filter(
-        (result) => !result.success,
-    ).length;
-
-    const passedTests = results.filter(
-        (result) => result.success,
-    ).length;
-
-    const bugsDetected = results.filter(
-        (result) => result.bugDetected,
-    ).length;
+    // =============================================================
+    // RECENT RESULTS
+    // =============================================================
 
     const recentResults = [...results]
         .sort(
             (a, b) =>
                 new Date(b.createdAt).getTime() -
-                new Date(a.createdAt).getTime(),
+                new Date(a.createdAt).getTime()
         )
         .slice(0, 5);
 
+    // =============================================================
+    // RENDER
+    // =============================================================
+
     return (
-        <main className="relative min-h-screen overflow-hidden bg-slate-950 p-6 text-white md:p-8">
+        <main className="min-h-screen bg-[#020617] px-4 py-6 text-white sm:px-6 md:p-8">
 
             {/* =====================================================
                 BACKGROUND GLOW
             ====================================================== */}
 
-            <div className="pointer-events-none fixed inset-0 overflow-hidden">
-                <div className="absolute left-[-150px] top-[-150px] h-[450px] w-[450px] rounded-full bg-blue-600/10 blur-[120px]" />
+            <div className="pointer-events-none fixed inset-0 -z-0 overflow-hidden">
 
-                <div className="absolute right-[-150px] top-[20%] h-[450px] w-[450px] rounded-full bg-violet-600/10 blur-[120px]" />
+                <div className="absolute -left-40 -top-40 h-96 w-96 rounded-full bg-cyan-500/10 blur-[120px]" />
 
-                <div className="absolute bottom-[-200px] left-[35%] h-[500px] w-[500px] rounded-full bg-cyan-500/10 blur-[140px]" />
+                <div className="absolute right-[-120px] top-[20%] h-96 w-96 rounded-full bg-violet-600/10 blur-[130px]" />
+
+                <div className="absolute bottom-[-150px] left-[35%] h-96 w-96 rounded-full bg-blue-600/5 blur-[130px]" />
             </div>
-
-            {/* =====================================================
-                BACKGROUND PROJECT NAME
-            ====================================================== */}
-
-            <div className="pointer-events-none fixed inset-0 flex items-center justify-center overflow-hidden">
-                <div className="whitespace-nowrap text-[10vw] font-black tracking-[0.18em] text-white/[0.015]">
-                    AUTOAPI SENTINEL
-                </div>
-
-                <div className="absolute -rotate-6 whitespace-nowrap text-[7vw] font-black tracking-[0.2em] text-cyan-400/[0.015]">
-                    AUTOAPI SENTINEL
-                </div>
-            </div>
-
-            {/* =====================================================
-                MAIN CONTENT
-            ====================================================== */}
 
             <div className="relative z-10 mx-auto max-w-7xl">
 
@@ -216,51 +309,65 @@ export default function Dashboard() {
                     HEADER
                 ================================================== */}
 
-                <div className="mb-8 flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+                <header className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
 
-                    <div className="flex items-center gap-4">
+                    <div>
 
-                        {/* Logo */}
-                        <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-cyan-400/10 to-violet-500/10 shadow-lg shadow-cyan-500/10">
-                            <span className="text-xl font-black text-cyan-400">
-                                AS
-                            </span>
-                        </div>
+                        <div className="flex items-center gap-3">
 
-                        <div>
-                            <h1 className="text-3xl font-bold tracking-tight text-white">
-                                AutoAPI Sentinel
-                            </h1>
+                            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-400/20 bg-cyan-400/10 shadow-[0_0_25px_rgba(34,211,238,0.12)]">
 
-                            <p className="mt-1 text-sm text-slate-400">
-                                API Testing & Bug Discovery Dashboard
-                            </p>
+                                <span className="text-lg text-cyan-400">
+                                    ◈
+                                </span>
+
+                            </div>
+
+                            <div>
+
+                                <h1 className="text-3xl font-bold tracking-tight text-white">
+                                    AutoAPI{" "}
+                                    <span className="text-cyan-400">
+                                        Sentinel
+                                    </span>
+                                </h1>
+
+                                <p className="mt-1 text-sm text-slate-400">
+                                    API Testing & Bug Discovery Dashboard
+                                </p>
+
+                            </div>
+
                         </div>
                     </div>
 
-                    {/* Status */}
-                    <div className="flex w-fit items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/5 px-4 py-2">
-                        <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.7)]" />
+                    {/* ONLINE STATUS */}
 
-                        <span className="text-xs font-medium text-emerald-400">
+                    <div className="flex w-fit items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/5 px-4 py-2 shadow-[0_0_20px_rgba(16,185,129,0.08)]">
+
+                        <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]" />
+
+                        <span className="text-xs font-semibold text-emerald-400">
                             Sentinel Online
                         </span>
+
                     </div>
-                </div>
+                </header>
 
                 {/* =================================================
                     LOADING
                 ================================================== */}
 
                 {loading && (
-                    <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-10 text-center shadow-xl backdrop-blur-xl">
+                    <GlassCard className="p-12 text-center">
 
-                        <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-slate-700 border-t-cyan-400" />
+                        <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-slate-700 border-t-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.25)]" />
 
-                        <p className="mt-4 text-sm text-slate-400">
+                        <p className="mt-5 text-sm text-slate-400">
                             Loading dashboard...
                         </p>
-                    </div>
+
+                    </GlassCard>
                 )}
 
                 {/* =================================================
@@ -268,7 +375,7 @@ export default function Dashboard() {
                 ================================================== */}
 
                 {error && (
-                    <div className="rounded-2xl border border-red-400/20 bg-red-500/10 p-5 text-red-400">
+                    <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-5 text-sm text-red-400 shadow-[0_0_30px_rgba(239,68,68,0.06)]">
                         {error}
                     </div>
                 )}
@@ -276,124 +383,280 @@ export default function Dashboard() {
                 {!loading && !error && (
                     <>
 
-                        {/* =============================================
-                            STATISTICS
-                        ============================================== */}
+                        {/* =================================================
+                            MAIN STATS
+                        ================================================== */}
 
-                        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 
                             <DashboardCard
                                 title="Projects"
                                 value={projects.length}
                                 icon="◈"
-                                accent="cyan"
+                                iconColor="cyan"
                             />
 
                             <DashboardCard
                                 title="Endpoints"
                                 value={endpoints.length}
                                 icon="⌁"
-                                accent="blue"
+                                iconColor="blue"
                             />
 
                             <DashboardCard
                                 title="Tests Run"
-                                value={results.length}
-                                icon="✓"
-                                accent="violet"
+                                value={analytics.totalTests}
+                                icon="◉"
+                                iconColor="violet"
                             />
 
                             <DashboardCard
                                 title="Bugs Detected"
-                                value={bugsDetected}
+                                value={analytics.bugsDetected}
                                 icon="⚠"
-                                accent="orange"
+                                iconColor="orange"
                             />
+
                         </div>
 
-                        {/* =============================================
-                            EXTRA TEST SUMMARY
-                        ============================================== */}
+                        {/* =================================================
+                            SUMMARY
+                        ================================================== */}
 
-                        <div className="mt-5 grid gap-5 md:grid-cols-2">
+                        <div className="mt-4 grid gap-4 md:grid-cols-3">
 
-                            <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-5 shadow-xl backdrop-blur-xl">
+                            <SummaryCard
+                                title="Passed Tests"
+                                value={analytics.passedTests}
+                                type="success"
+                            />
 
-                                <div className="flex items-center justify-between">
+                            <SummaryCard
+                                title="Failed Tests"
+                                value={analytics.failedTests}
+                                type="danger"
+                            />
 
-                                    <div>
-                                        <p className="text-sm text-slate-400">
-                                            Passed Tests
-                                        </p>
+                            <SummaryCard
+                                title="Success Rate"
+                                value={`${analytics.successRate}%`}
+                                type="primary"
+                            />
 
-                                        <p className="mt-1 text-2xl font-bold text-emerald-400">
-                                            {passedTests}
-                                        </p>
-                                    </div>
-
-                                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-400/10 text-lg text-emerald-400">
-                                        ✓
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-5 shadow-xl backdrop-blur-xl">
-
-                                <div className="flex items-center justify-between">
-
-                                    <div>
-                                        <p className="text-sm text-slate-400">
-                                            Failed Tests
-                                        </p>
-
-                                        <p className="mt-1 text-2xl font-bold text-red-400">
-                                            {failedTests}
-                                        </p>
-                                    </div>
-
-                                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-400/10 text-lg text-red-400">
-                                        !
-                                    </div>
-                                </div>
-                            </div>
                         </div>
 
-                        {/* =============================================
-                            PROJECTS
-                        ============================================== */}
+                        {/* =================================================
+                            ANALYTICS
+                        ================================================== */}
 
-                        <section className="mt-8 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/70 shadow-xl backdrop-blur-xl">
+                        <GlassCard className="mt-8 overflow-hidden">
 
-                            {/* Header */}
                             <div className="border-b border-white/10 px-6 py-5">
 
-                                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 
                                     <div>
+
+                                        <h2 className="text-xl font-semibold text-white">
+                                            Test Analytics
+                                        </h2>
+
+                                        <p className="mt-1 text-sm text-slate-500">
+                                            API testing performance and detected
+                                            bug statistics
+                                        </p>
+
+                                    </div>
+
+                                    <span className="w-fit rounded-full border border-cyan-400/20 bg-cyan-400/5 px-3 py-1 text-xs font-medium text-cyan-400">
+                                        Analytics
+                                    </span>
+
+                                </div>
+                            </div>
+
+                            <div className="p-6">
+
+                                <div className="grid gap-5 md:grid-cols-2">
+
+                                    {/* SUCCESS RATE */}
+
+                                    <div className="rounded-2xl border border-cyan-400/10 bg-slate-950/70 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+
+                                        <div className="flex items-center justify-between">
+
+                                            <div>
+
+                                                <p className="text-sm text-slate-500">
+                                                    Overall Success Rate
+                                                </p>
+
+                                                <p className="mt-2 text-4xl font-bold text-white">
+                                                    {analytics.successRate}
+                                                    <span className="text-cyan-400">
+                                                        %
+                                                    </span>
+                                                </p>
+
+                                            </div>
+
+                                            <div className="text-right text-xs">
+
+                                                <p className="text-emerald-400">
+                                                    {analytics.passedTests}{" "}
+                                                    passed
+                                                </p>
+
+                                                <p className="mt-1 text-red-400">
+                                                    {analytics.failedTests}{" "}
+                                                    failed
+                                                </p>
+
+                                            </div>
+
+                                        </div>
+
+                                        {/* PROGRESS */}
+
+                                        <div className="mt-6 h-2 overflow-hidden rounded-full bg-slate-800">
+
+                                            <div
+                                                className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-blue-500 shadow-[0_0_15px_rgba(34,211,238,0.4)] transition-all duration-700"
+                                                style={{
+                                                    width: `${Math.min(
+                                                        Math.max(
+                                                            analytics.successRate,
+                                                            0
+                                                        ),
+                                                        100
+                                                    )}%`,
+                                                }}
+                                            />
+
+                                        </div>
+
+                                    </div>
+
+                                    {/* BUG BREAKDOWN */}
+
+                                    <div className="rounded-2xl border border-violet-400/10 bg-slate-950/70 p-5">
+
+                                        <div className="mb-4">
+
+                                            <p className="text-sm text-slate-400">
+                                                Bug Breakdown
+                                            </p>
+
+                                            <p className="mt-1 text-xs text-slate-600">
+                                                Detected issue types
+                                            </p>
+
+                                        </div>
+
+                                        {Object.keys(
+                                            analytics.bugTypes
+                                        ).length === 0 ? (
+                                            <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center">
+
+                                                <p className="text-sm text-slate-500">
+                                                    No bugs detected yet.
+                                                </p>
+
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-3">
+
+                                                {Object.entries(
+                                                    analytics.bugTypes
+                                                )
+                                                    .sort(
+                                                        (
+                                                            [, a],
+                                                            [, b]
+                                                        ) => b - a
+                                                    )
+                                                    .map(
+                                                        ([
+                                                            bugType,
+                                                            count,
+                                                        ]) => (
+                                                            <div
+                                                                key={
+                                                                    bugType
+                                                                }
+                                                                className="flex items-center justify-between rounded-xl border border-white/5 bg-slate-900/70 px-4 py-3"
+                                                            >
+
+                                                                <div className="flex items-center gap-3">
+
+                                                                    <span className="h-2 w-2 rounded-full bg-orange-400 shadow-[0_0_10px_rgba(251,146,60,0.5)]" />
+
+                                                                    <span className="text-sm font-medium text-slate-300">
+                                                                        {
+                                                                            bugType
+                                                                        }
+                                                                    </span>
+
+                                                                </div>
+
+                                                                <span className="rounded-lg border border-orange-400/20 bg-orange-400/5 px-3 py-1 text-xs font-bold text-orange-400">
+                                                                    {
+                                                                        count
+                                                                    }
+                                                                </span>
+
+                                                            </div>
+                                                        )
+                                                    )}
+
+                                            </div>
+                                        )}
+
+                                    </div>
+
+                                </div>
+                            </div>
+
+                        </GlassCard>
+
+                        {/* =================================================
+                            PROJECTS
+                        ================================================== */}
+
+                        <GlassCard className="mt-8 overflow-hidden">
+
+                            <div className="border-b border-white/10 px-6 py-5">
+
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+
+                                    <div>
+
                                         <h2 className="text-xl font-semibold text-white">
                                             Your Projects
                                         </h2>
 
-                                        <p className="mt-1 text-sm text-slate-400">
+                                        <p className="mt-1 text-sm text-slate-500">
                                             Projects created by your account
                                         </p>
+
                                     </div>
 
-                                    <div className="text-xs font-medium text-cyan-400">
+                                    <span className="rounded-full border border-blue-400/20 bg-blue-400/5 px-3 py-1 text-xs font-medium text-blue-400">
                                         {projects.length}{" "}
                                         {projects.length === 1
                                             ? "Project"
                                             : "Projects"}
-                                    </div>
+                                    </span>
+
                                 </div>
                             </div>
 
                             <div className="p-6">
 
                                 {projects.length === 0 ? (
-                                    <div className="rounded-xl border border-dashed border-white/10 bg-slate-950/40 p-10 text-center">
+                                    <div className="rounded-2xl border border-dashed border-slate-800 p-10 text-center">
 
-                                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-cyan-400/10 text-xl text-cyan-400">
+                                        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-400/10 bg-cyan-400/5 text-xl text-cyan-400">
                                             ◈
                                         </div>
 
@@ -401,80 +664,101 @@ export default function Dashboard() {
                                             No projects yet
                                         </p>
 
-                                        <p className="mt-1 text-sm text-slate-500">
-                                            Create your first API testing project.
+                                        <p className="mt-1 text-sm text-slate-600">
+                                            Create your first API testing
+                                            project.
                                         </p>
+
                                     </div>
                                 ) : (
                                     <div className="grid gap-4 md:grid-cols-2">
 
-                                        {projects.map((project) => (
-                                            <div
-                                                key={project.id}
-                                                className="group rounded-xl border border-white/10 bg-slate-950/50 p-5 transition duration-300 hover:border-cyan-400/30 hover:bg-slate-950/80 hover:shadow-lg hover:shadow-cyan-500/5"
-                                            >
-
-                                                <div className="flex items-start justify-between gap-4">
-
-                                                    <div>
-                                                        <h3 className="font-semibold text-white">
-                                                            {project.name}
-                                                        </h3>
-
-                                                        <p className="mt-1 text-sm text-slate-500">
-                                                            {project.description ||
-                                                                "No description"}
-                                                        </p>
-                                                    </div>
-
-                                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-400/10 text-cyan-400">
-                                                        ◈
-                                                    </div>
-                                                </div>
-
-                                                <button
-                                                    onClick={() =>
-                                                        (window.location.href = `/projects/${project.id}`)
+                                        {projects.map(
+                                            (project) => (
+                                                <div
+                                                    key={
+                                                        project.id
                                                     }
-                                                    className="mt-5 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-500/10 transition hover:scale-[1.02] hover:shadow-cyan-500/20"
+                                                    className="group rounded-2xl border border-white/10 bg-slate-950/70 p-5 transition duration-300 hover:-translate-y-0.5 hover:border-cyan-400/20 hover:bg-slate-900/80 hover:shadow-[0_0_30px_rgba(34,211,238,0.07)]"
                                                 >
-                                                    Open Project →
-                                                </button>
-                                            </div>
-                                        ))}
+
+                                                    <div className="flex items-start justify-between gap-4">
+
+                                                        <div>
+
+                                                            <h3 className="font-semibold text-white">
+                                                                {
+                                                                    project.name
+                                                                }
+                                                            </h3>
+
+                                                            <p className="mt-1 text-sm text-slate-500">
+                                                                {project.description ||
+                                                                    "No description"}
+                                                            </p>
+
+                                                        </div>
+
+                                                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-400/20 bg-violet-400/5 text-violet-400">
+                                                            ◈
+                                                        </div>
+
+                                                    </div>
+
+                                                    <button
+                                                        onClick={() =>
+                                                            (window.location.href =
+                                                                `/projects/${project.id}`)
+                                                        }
+                                                        className="mt-5 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_0_20px_rgba(37,99,235,0.18)] transition hover:bg-blue-500 hover:shadow-[0_0_25px_rgba(37,99,235,0.3)]"
+                                                    >
+                                                        Open Project →
+                                                    </button>
+
+                                                </div>
+                                            )
+                                        )}
+
                                     </div>
                                 )}
+
                             </div>
-                        </section>
 
-                        {/* =============================================
+                        </GlassCard>
+
+                        {/* =================================================
                             RECENT TESTS
-                        ============================================== */}
+                        ================================================== */}
 
-                        <section className="mt-8 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/70 shadow-xl backdrop-blur-xl">
+                        <GlassCard className="mt-8 overflow-hidden">
 
-                            {/* Header */}
                             <div className="border-b border-white/10 px-6 py-5">
 
                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 
                                     <div>
-                                        <h2 className="text-xl font-semibold tracking-tight text-white">
+
+                                        <h2 className="text-xl font-semibold text-white">
                                             Recent Tests
                                         </h2>
 
-                                        <p className="mt-1 text-sm text-slate-400">
-                                            Latest API test executions and detected issues
+                                        <p className="mt-1 text-sm text-slate-500">
+                                            Latest API test executions and
+                                            detected issues
                                         </p>
+
                                     </div>
 
                                     <div className="flex w-fit items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/5 px-3 py-1.5 text-xs font-medium text-emerald-400">
 
-                                        <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+                                        <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]" />
 
                                         Live test history
+
                                     </div>
+
                                 </div>
+
                             </div>
 
                             {recentResults.length === 0 ? (
@@ -488,17 +772,18 @@ export default function Dashboard() {
                                         No tests have been run yet
                                     </p>
 
-                                    <p className="mt-1 text-sm text-slate-500">
+                                    <p className="mt-1 text-sm text-slate-600">
                                         Run an API test to see results here.
                                     </p>
+
                                 </div>
                             ) : (
                                 <div className="overflow-x-auto">
 
                                     <table className="w-full min-w-[950px] text-left">
 
-                                        {/* Table Header */}
-                                        <thead className="bg-slate-950/60">
+                                        <thead className="bg-slate-950/80">
+
                                             <tr className="border-b border-white/10">
 
                                                 <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -520,271 +805,367 @@ export default function Dashboard() {
                                                 <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
                                                     Bug Detection
                                                 </th>
+
                                             </tr>
+
                                         </thead>
 
                                         <tbody className="divide-y divide-white/5">
 
-                                            {recentResults.map((result) => {
+                                            {recentResults.map(
+                                                (result) => {
 
-                                                const endpoint =
-                                                    endpoints.find(
-                                                        (item) =>
-                                                            item.id ===
-                                                            result.endpointId,
-                                                    );
+                                                    const endpoint =
+                                                        endpoints.find(
+                                                            (item) =>
+                                                                item.id ===
+                                                                result.endpointId
+                                                        );
 
-                                                const responseIsSlow =
-                                                    result.responseTime > 1000;
+                                                    const responseIsSlow =
+                                                        result.responseTime >
+                                                        1000;
 
-                                                return (
-                                                    <tr
-                                                        key={result.id}
-                                                        className="group transition-colors hover:bg-white/[0.025]"
-                                                    >
+                                                    return (
+                                                        <tr
+                                                            key={
+                                                                result.id
+                                                            }
+                                                            className="transition hover:bg-cyan-400/[0.025]"
+                                                        >
 
-                                                        {/* Endpoint */}
-                                                        <td className="px-6 py-5">
+                                                            {/* ENDPOINT */}
 
-                                                            <div className="max-w-[320px]">
+                                                            <td className="px-6 py-5">
 
-                                                                <p className="truncate font-semibold text-slate-200">
-                                                                    {endpoint?.name ||
-                                                                        "Unknown endpoint"}
-                                                                </p>
+                                                                <div className="max-w-[320px]">
 
-                                                                <div className="mt-1.5 flex items-center gap-2">
+                                                                    <p className="truncate font-semibold text-slate-200">
+                                                                        {endpoint?.name ||
+                                                                            "Unknown endpoint"}
+                                                                    </p>
 
-                                                                    {endpoint?.method && (
-                                                                        <span
-                                                                            className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${
-                                                                                endpoint.method ===
-                                                                                "GET"
-                                                                                    ? "bg-cyan-400/10 text-cyan-400"
-                                                                                    : endpoint.method ===
-                                                                                      "POST"
-                                                                                    ? "bg-emerald-400/10 text-emerald-400"
-                                                                                    : endpoint.method ===
-                                                                                      "DELETE"
-                                                                                    ? "bg-red-400/10 text-red-400"
-                                                                                    : endpoint.method ===
-                                                                                      "PUT"
-                                                                                    ? "bg-violet-400/10 text-violet-400"
-                                                                                    : "bg-slate-800 text-slate-400"
-                                                                            }`}
-                                                                        >
-                                                                            {
-                                                                                endpoint.method
-                                                                            }
+                                                                    <div className="mt-2 flex items-center gap-2">
+
+                                                                        {endpoint?.method && (
+                                                                            <span className="rounded-md border border-cyan-400/20 bg-cyan-400/5 px-2 py-0.5 text-[10px] font-bold text-cyan-400">
+                                                                                {
+                                                                                    endpoint.method
+                                                                                }
+                                                                            </span>
+                                                                        )}
+
+                                                                        <span className="truncate text-xs text-slate-600">
+                                                                            {endpoint?.url ||
+                                                                                "No URL"}
                                                                         </span>
-                                                                    )}
 
-                                                                    <span className="truncate text-xs text-slate-600">
-                                                                        {endpoint?.url ||
-                                                                            "No URL"}
-                                                                    </span>
+                                                                    </div>
+
                                                                 </div>
-                                                            </div>
-                                                        </td>
 
-                                                        {/* Status Code */}
-                                                        <td className="px-6 py-5">
+                                                            </td>
 
-                                                            {result.statusCode ? (
-                                                                <span
-                                                                    className={`inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-bold ring-1 ${
-                                                                        result.statusCode >=
-                                                                            200 &&
-                                                                        result.statusCode <
-                                                                            300
-                                                                            ? "bg-emerald-400/10 text-emerald-400 ring-emerald-400/20"
-                                                                            : result.statusCode >=
-                                                                                300 &&
-                                                                              result.statusCode <
-                                                                                  400
-                                                                            ? "bg-amber-400/10 text-amber-400 ring-amber-400/20"
-                                                                            : "bg-red-400/10 text-red-400 ring-red-400/20"
-                                                                    }`}
-                                                                >
-                                                                    {
-                                                                        result.statusCode
-                                                                    }
-                                                                </span>
-                                                            ) : (
-                                                                <span className="rounded-lg bg-red-400/10 px-3 py-1.5 text-xs font-bold text-red-400 ring-1 ring-red-400/20">
-                                                                    ERROR
-                                                                </span>
-                                                            )}
-                                                        </td>
+                                                            {/* STATUS */}
 
-                                                        {/* Response Time */}
-                                                        <td className="px-6 py-5">
+                                                            <td className="px-6 py-5">
 
-                                                            <div className="flex items-center gap-2">
-
-                                                                <span
-                                                                    className={`font-semibold ${
-                                                                        responseIsSlow
-                                                                            ? "text-orange-400"
-                                                                            : "text-slate-300"
-                                                                    }`}
-                                                                >
-                                                                    {
-                                                                        result.responseTime
-                                                                    }{" "}
-                                                                    ms
-                                                                </span>
-
-                                                                {responseIsSlow && (
-                                                                    <span className="rounded-full bg-orange-400/10 px-2 py-0.5 text-[10px] font-semibold text-orange-400 ring-1 ring-orange-400/10">
-                                                                        Slow
+                                                                {result.statusCode ? (
+                                                                    <span
+                                                                        className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-bold ${
+                                                                            result.statusCode >=
+                                                                                200 &&
+                                                                            result.statusCode <
+                                                                                300
+                                                                                ? "border-emerald-400/20 bg-emerald-400/5 text-emerald-400"
+                                                                                : result.statusCode >=
+                                                                                      300 &&
+                                                                                  result.statusCode <
+                                                                                      400
+                                                                                ? "border-orange-400/20 bg-orange-400/5 text-orange-400"
+                                                                                : "border-red-400/20 bg-red-400/5 text-red-400"
+                                                                        }`}
+                                                                    >
+                                                                        {
+                                                                            result.statusCode
+                                                                        }
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="rounded-lg border border-red-400/20 bg-red-400/5 px-3 py-1.5 text-xs font-bold text-red-400">
+                                                                        ERROR
                                                                     </span>
                                                                 )}
-                                                            </div>
-                                                        </td>
 
-                                                        {/* Result */}
-                                                        <td className="px-6 py-5">
+                                                            </td>
 
-                                                            {result.success ? (
-                                                                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/10 px-3 py-1.5 text-xs font-bold text-emerald-400 ring-1 ring-emerald-400/20">
+                                                            {/* RESPONSE TIME */}
 
-                                                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_7px_rgba(52,211,153,0.7)]" />
+                                                            <td className="px-6 py-5">
 
-                                                                    PASS
-                                                                </span>
-                                                            ) : (
-                                                                <span className="inline-flex items-center gap-1.5 rounded-full bg-red-400/10 px-3 py-1.5 text-xs font-bold text-red-400 ring-1 ring-red-400/20">
+                                                                <div className="flex items-center gap-2">
 
-                                                                    <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
-
-                                                                    FAIL
-                                                                </span>
-                                                            )}
-                                                        </td>
-
-                                                        {/* Bug Detection */}
-                                                        <td className="px-6 py-5">
-
-                                                            {result.bugDetected ? (
-                                                                <div className="flex flex-col gap-1.5">
-
-                                                                    <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-orange-400/10 px-3 py-1.5 text-xs font-bold text-orange-400 ring-1 ring-orange-400/20">
-
-                                                                        <span>
-                                                                            ⚠
-                                                                        </span>
-
-                                                                        BUG DETECTED
+                                                                    <span
+                                                                        className={`font-semibold ${
+                                                                            responseIsSlow
+                                                                                ? "text-orange-400"
+                                                                                : "text-slate-300"
+                                                                        }`}
+                                                                    >
+                                                                        {
+                                                                            result.responseTime
+                                                                        }{" "}
+                                                                        ms
                                                                     </span>
 
-                                                                    {result.bugType && (
-                                                                        <span className="text-[11px] font-medium text-slate-500">
-                                                                            {
-                                                                                result.bugType
-                                                                            }
+                                                                    {responseIsSlow && (
+                                                                        <span className="rounded-full border border-orange-400/20 bg-orange-400/5 px-2 py-0.5 text-[10px] font-semibold text-orange-400">
+                                                                            Slow
                                                                         </span>
                                                                     )}
+
                                                                 </div>
-                                                            ) : (
-                                                                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-800/70 px-3 py-1.5 text-xs font-semibold text-slate-400 ring-1 ring-white/5">
-                                                                    ✓ No Bug
-                                                                </span>
-                                                            )}
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
+
+                                                            </td>
+
+                                                            {/* RESULT */}
+
+                                                            <td className="px-6 py-5">
+
+                                                                {result.success ? (
+                                                                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-400/5 px-3 py-1.5 text-xs font-bold text-emerald-400">
+
+                                                                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_7px_rgba(52,211,153,0.8)]" />
+
+                                                                        PASS
+
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="inline-flex items-center gap-1.5 rounded-full border border-red-400/20 bg-red-400/5 px-3 py-1.5 text-xs font-bold text-red-400">
+
+                                                                        <span className="h-1.5 w-1.5 rounded-full bg-red-400 shadow-[0_0_7px_rgba(248,113,113,0.8)]" />
+
+                                                                        FAIL
+
+                                                                    </span>
+                                                                )}
+
+                                                            </td>
+
+                                                            {/* BUG */}
+
+                                                            <td className="px-6 py-5">
+
+                                                                {result.bugDetected ? (
+                                                                    <div className="flex flex-col gap-1.5">
+
+                                                                        <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-orange-400/20 bg-orange-400/5 px-3 py-1.5 text-xs font-bold text-orange-400">
+
+                                                                            <span>
+                                                                                ⚠
+                                                                            </span>
+
+                                                                            BUG
+                                                                            DETECTED
+
+                                                                        </span>
+
+                                                                        {result.bugType && (
+                                                                            <span className="text-[11px] font-medium text-slate-600">
+                                                                                {
+                                                                                    result.bugType
+                                                                                }
+                                                                            </span>
+                                                                        )}
+
+                                                                    </div>
+                                                                ) : (
+                                                                    <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-500">
+                                                                        ✓ No
+                                                                        Bug
+                                                                    </span>
+                                                                )}
+
+                                                            </td>
+
+                                                        </tr>
+                                                    );
+                                                }
+                                            )}
+
                                         </tbody>
+
                                     </table>
+
                                 </div>
                             )}
-                        </section>
 
-                        {/* =============================================
+                        </GlassCard>
+
+                        {/* =================================================
                             FOOTER
-                        ============================================== */}
+                        ================================================== */}
 
-                        <div className="py-8 text-center">
+                        <footer className="py-8 text-center">
 
                             <p className="text-xs text-slate-600">
                                 AutoAPI Sentinel • Autonomous API Testing
                                 & Bug Discovery
                             </p>
 
-                            <div className="mx-auto mt-3 h-px w-24 bg-gradient-to-r from-transparent via-cyan-500/40 to-transparent" />
-                        </div>
+                            <div className="mx-auto mt-3 h-px w-24 bg-gradient-to-r from-transparent via-cyan-400/40 to-transparent" />
+
+                        </footer>
+
                     </>
                 )}
+
             </div>
         </main>
     );
 }
 
-/* =========================================================
-   DASHBOARD STAT CARD
-========================================================= */
+/* =============================================================
+   GLASS CARD
+============================================================= */
+
+function GlassCard({
+    children,
+    className = "",
+}: {
+    children: React.ReactNode;
+    className?: string;
+}) {
+    return (
+        <div
+            className={`border border-white/10 bg-slate-900/50 shadow-[0_8px_40px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.03)] backdrop-blur-xl ${className}`}
+        >
+            {children}
+        </div>
+    );
+}
+
+/* =============================================================
+   DASHBOARD CARD
+============================================================= */
 
 function DashboardCard({
     title,
     value,
     icon,
-    accent,
+    iconColor,
 }: {
     title: string;
     value: number;
     icon: string;
-    accent: "cyan" | "blue" | "violet" | "orange";
+    iconColor: "cyan" | "blue" | "violet" | "orange";
 }) {
-    const styles = {
+    const colors = {
         cyan: {
-            icon: "bg-cyan-400/10 text-cyan-400",
-            glow: "group-hover:border-cyan-400/30",
-            number: "text-cyan-400",
+            box: "border-cyan-400/20 bg-cyan-400/5",
+            text: "text-cyan-400",
+            glow: "shadow-[0_0_25px_rgba(34,211,238,0.08)]",
         },
         blue: {
-            icon: "bg-blue-400/10 text-blue-400",
-            glow: "group-hover:border-blue-400/30",
-            number: "text-blue-400",
+            box: "border-blue-400/20 bg-blue-400/5",
+            text: "text-blue-400",
+            glow: "shadow-[0_0_25px_rgba(59,130,246,0.08)]",
         },
         violet: {
-            icon: "bg-violet-400/10 text-violet-400",
-            glow: "group-hover:border-violet-400/30",
-            number: "text-violet-400",
+            box: "border-violet-400/20 bg-violet-400/5",
+            text: "text-violet-400",
+            glow: "shadow-[0_0_25px_rgba(139,92,246,0.08)]",
         },
         orange: {
-            icon: "bg-orange-400/10 text-orange-400",
-            glow: "group-hover:border-orange-400/30",
-            number: "text-orange-400",
+            box: "border-orange-400/20 bg-orange-400/5",
+            text: "text-orange-400",
+            glow: "shadow-[0_0_25px_rgba(251,146,60,0.08)]",
         },
     };
 
-    const current = styles[accent];
+    const color = colors[iconColor];
 
     return (
         <div
-            className={`group rounded-2xl border border-white/10 bg-slate-900/70 p-5 shadow-xl backdrop-blur-xl transition duration-300 ${current.glow}`}
+            className={`group rounded-2xl border border-white/10 bg-slate-900/50 p-5 backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:border-white/20 ${color.glow}`}
         >
+
             <div className="flex items-center justify-between">
 
                 <div>
-                    <p className="text-sm text-slate-400">
+
+                    <p className="text-sm text-slate-500">
                         {title}
                     </p>
 
-                    <p
-                        className={`mt-2 text-3xl font-bold ${current.number}`}
-                    >
+                    <p className="mt-2 text-3xl font-bold tracking-tight text-white">
                         {value}
                     </p>
+
                 </div>
 
                 <div
-                    className={`flex h-12 w-12 items-center justify-center rounded-xl text-lg font-bold ${current.icon}`}
+                    className={`flex h-11 w-11 items-center justify-center rounded-xl border ${color.box} ${color.text}`}
                 >
                     {icon}
                 </div>
+
             </div>
+
+        </div>
+    );
+}
+
+/* =============================================================
+   SUMMARY CARD
+============================================================= */
+
+function SummaryCard({
+    title,
+    value,
+    type,
+}: {
+    title: string;
+    value: number | string;
+    type: "success" | "danger" | "primary";
+}) {
+    const styles = {
+        success: {
+            border: "border-emerald-400/20",
+            bg: "bg-emerald-400/5",
+            text: "text-emerald-400",
+            glow: "shadow-[0_0_25px_rgba(16,185,129,0.06)]",
+        },
+        danger: {
+            border: "border-red-400/20",
+            bg: "bg-red-400/5",
+            text: "text-red-400",
+            glow: "shadow-[0_0_25px_rgba(239,68,68,0.06)]",
+        },
+        primary: {
+            border: "border-cyan-400/20",
+            bg: "bg-cyan-400/5",
+            text: "text-cyan-400",
+            glow: "shadow-[0_0_25px_rgba(34,211,238,0.06)]",
+        },
+    };
+
+    const style = styles[type];
+
+    return (
+        <div
+            className={`rounded-2xl border ${style.border} ${style.bg} p-5 backdrop-blur-xl ${style.glow}`}
+        >
+
+            <p className="text-sm text-slate-500">
+                {title}
+            </p>
+
+            <p
+                className={`mt-2 text-2xl font-bold ${style.text}`}
+            >
+                {value}
+            </p>
+
         </div>
     );
 }
