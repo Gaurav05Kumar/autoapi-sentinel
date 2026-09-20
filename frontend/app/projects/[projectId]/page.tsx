@@ -754,8 +754,8 @@ export default function ProjectPage() {
   // ============================================================
 
   return (
-    <main className="min-h-screen bg-slate-100 p-8">
-      <div className="mx-auto max-w-7xl">
+    <main className="min-h-screen bg-slate-800/70 p-8">
+      <div className="relative z-10 mx-auto max-w-7xl">
 
         {/* ======================================================
             HEADER
@@ -767,7 +767,7 @@ export default function ProjectPage() {
               (window.location.href =
                 "/dashboard")
             }
-            className="mb-4 text-sm font-medium text-slate-600 hover:text-slate-900"
+            className="mb-4 text-sm font-medium text-slate-500 hover:text-white"
           >
             ← Back to Dashboard
           </button>
@@ -775,7 +775,7 @@ export default function ProjectPage() {
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
 
             <div>
-              <h1 className="text-3xl font-bold text-slate-900">
+              <h1 className="text-3xl font-bold tracking-tight text-white">
                 Project Endpoints
               </h1>
 
@@ -791,7 +791,7 @@ export default function ProjectPage() {
                 onClick={() =>
                   setShowHistory(true)
                 }
-                className="rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className="rounded-lg border border-white/10 bg-slate-900/70 px-5 py-3 text-sm font-medium text-slate-300 hover:bg-slate-900/70/5"
               >
                 Test History
               </button>
@@ -803,7 +803,7 @@ export default function ProjectPage() {
                       !current,
                   )
                 }
-                className="rounded-lg bg-slate-900 px-5 py-3 text-sm font-medium text-white hover:bg-slate-800"
+                className="rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-3 text-sm font-medium text-white hover:from-cyan-400 hover:to-blue-500"
               >
                 {showAddForm
                   ? "Close Form"
@@ -819,7 +819,7 @@ export default function ProjectPage() {
         ====================================================== */}
 
         {error && (
-          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <div className="mb-6 rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-400">
             {error}
           </div>
         )}
@@ -829,10 +829,10 @@ export default function ProjectPage() {
         ====================================================== */}
 
         {showAddForm && (
-          <section className="mb-8 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <section className="mb-8 rounded-xl border border-white/10 bg-slate-900/70 p-6 shadow-xl backdrop-blur-xl">
 
             <div className="mb-6">
-              <h2 className="text-xl font-semibold text-slate-900">
+              <h2 className="text-xl font-semibold text-white">
                 Add New Endpoint
               </h2>
 
@@ -854,7 +854,7 @@ export default function ProjectPage() {
                 <div>
                   <label
                     htmlFor="endpoint-name"
-                    className="mb-2 block text-sm font-medium text-slate-700"
+                    className="mb-2 block text-sm font-medium text-slate-300"
                   >
                     Endpoint Name
                   </label>
@@ -869,14 +869,14 @@ export default function ProjectPage() {
                       )
                     }
                     placeholder="Get Users"
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 placeholder:text-slate-400 outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
+                    className="w-full rounded-lg border border-white/10 bg-slate-950/70 px-4 py-3 text-white placeholder:text-slate-500 outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
                   />
                 </div>
 
                 <div>
                   <label
                     htmlFor="endpoint-method"
-                    className="mb-2 block text-sm font-medium text-slate-700"
+                    className="mb-2 block text-sm font-medium text-slate-300"
                   >
                     HTTP Method
                   </label>
@@ -889,7 +889,7 @@ export default function ProjectPage() {
                         event.target.value,
                       )
                     }
-                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
+                    className="w-full rounded-lg border border-white/10 bg-slate-950/70 px-4 py-3 text-white outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
                   >
                     <option value="GET">
                       GET
@@ -920,7 +920,7 @@ export default function ProjectPage() {
               <div>
                 <label
                   htmlFor="endpoint-url"
-                  className="mb-2 block text-sm font-medium text-slate-700"
+                  className="mb-2 block text-sm font-medium text-slate-300"
                 >
                   API URL
                 </label>
@@ -935,15 +935,15 @@ export default function ProjectPage() {
                     )
                   }
                   placeholder="https://jsonplaceholder.typicode.com/users"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 placeholder:text-slate-400 outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
+                  className="w-full rounded-lg border border-white/10 bg-slate-950/70 px-4 py-3 text-white placeholder:text-slate-500 outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
                 />
               </div>
 
               {/* VALIDATION */}
 
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+              <div className="rounded-xl border border-white/10 bg-slate-950/60 p-5">
 
-                <h3 className="mb-4 font-semibold text-slate-900">
+                <h3 className="mb-4 font-semibold text-white">
                   Automated Validation
                 </h3>
 
@@ -952,7 +952,7 @@ export default function ProjectPage() {
                   <div>
                     <label
                       htmlFor="expected-status"
-                      className="mb-2 block text-sm font-medium text-slate-700"
+                      className="mb-2 block text-sm font-medium text-slate-300"
                     >
                       Expected Status Code
                     </label>
@@ -968,14 +968,14 @@ export default function ProjectPage() {
                           event.target.value,
                         )
                       }
-                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none"
+                      className="w-full rounded-lg border border-white/10 bg-slate-950/70 px-4 py-3 text-white outline-none"
                     />
                   </div>
 
                   <div>
                     <label
                       htmlFor="max-response-time"
-                      className="mb-2 block text-sm font-medium text-slate-700"
+                      className="mb-2 block text-sm font-medium text-slate-300"
                     >
                       Max Response Time (ms)
                     </label>
@@ -990,7 +990,7 @@ export default function ProjectPage() {
                           event.target.value,
                         )
                       }
-                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none"
+                      className="w-full rounded-lg border border-white/10 bg-slate-950/70 px-4 py-3 text-white outline-none"
                     />
                   </div>
 
@@ -1002,7 +1002,7 @@ export default function ProjectPage() {
               <div>
                 <label
                   htmlFor="endpoint-headers"
-                  className="mb-2 block text-sm font-medium text-slate-700"
+                  className="mb-2 block text-sm font-medium text-slate-300"
                 >
                   Headers (JSON)
                 </label>
@@ -1019,7 +1019,7 @@ export default function ProjectPage() {
                   placeholder={`{
   "Content-Type": "application/json"
 }`}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 font-mono text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
+                  className="w-full rounded-lg border border-white/10 bg-slate-900/70 px-4 py-3 font-mono text-sm text-white placeholder:text-slate-500 outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
                 />
               </div>
 
@@ -1028,7 +1028,7 @@ export default function ProjectPage() {
               <div>
                 <label
                   htmlFor="endpoint-body"
-                  className="mb-2 block text-sm font-medium text-slate-700"
+                  className="mb-2 block text-sm font-medium text-slate-300"
                 >
                   Request Body (JSON)
                 </label>
@@ -1045,7 +1045,7 @@ export default function ProjectPage() {
                   placeholder={`{
   "name": "Gaurav"
 }`}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 font-mono text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
+                  className="w-full rounded-lg border border-white/10 bg-slate-900/70 px-4 py-3 font-mono text-sm text-white placeholder:text-slate-500 outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
                 />
               </div>
 
@@ -1056,7 +1056,7 @@ export default function ProjectPage() {
                 <button
                   type="submit"
                   disabled={addingEndpoint}
-                  className="rounded-lg bg-slate-900 px-5 py-3 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+                  className="rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-3 text-sm font-medium text-white hover:from-cyan-400 hover:to-blue-500 disabled:opacity-60"
                 >
                   {addingEndpoint
                     ? "Adding..."
@@ -1069,7 +1069,7 @@ export default function ProjectPage() {
                     setShowAddForm(false);
                     setError("");
                   }}
-                  className="rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  className="rounded-lg border border-white/10 bg-slate-900/70 px-5 py-3 text-sm font-medium text-slate-300 hover:bg-slate-900/70/5"
                 >
                   Cancel
                 </button>
@@ -1084,10 +1084,10 @@ export default function ProjectPage() {
             ENDPOINTS
         ====================================================== */}
 
-        <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <section className="rounded-xl border border-white/10 bg-slate-900/70 p-6 shadow-xl backdrop-blur-xl">
 
           <div className="mb-6">
-            <h2 className="text-xl font-semibold text-slate-900">
+            <h2 className="text-xl font-semibold text-white">
               Endpoints
             </h2>
 
@@ -1103,9 +1103,9 @@ export default function ProjectPage() {
             </p>
           ) : sortedEndpoints.length ===
             0 ? (
-            <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center">
+            <div className="rounded-lg border border-dashed border-white/10 p-8 text-center">
 
-              <p className="font-medium text-slate-700">
+              <p className="font-medium text-slate-300">
                 No endpoints found
               </p>
 
@@ -1140,7 +1140,7 @@ export default function ProjectPage() {
                   return (
                     <div
                       key={endpoint.id}
-                      className="rounded-xl border border-slate-200 p-5"
+                      className="rounded-xl border border-white/10 p-5"
                     >
 
                       {/* ENDPOINT HEADER */}
@@ -1149,17 +1149,17 @@ export default function ProjectPage() {
 
                         <div className="min-w-0">
 
-                          <h3 className="font-semibold text-slate-900">
+                          <h3 className="font-semibold text-white">
                             {endpoint.name}
                           </h3>
 
                           <div className="mt-2 flex flex-wrap items-center gap-3">
 
-                            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">
+                            <span className="rounded-md bg-slate-800/70 px-2 py-1 text-xs font-bold text-slate-300">
                               {endpoint.method}
                             </span>
 
-                            <span className="break-all text-sm text-slate-600">
+                            <span className="break-all text-sm text-slate-500">
                               {endpoint.url}
                             </span>
 
@@ -1179,7 +1179,7 @@ export default function ProjectPage() {
                               runningId ===
                               endpoint.id
                             }
-                            className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+                            className="rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:from-cyan-400 hover:to-blue-500 disabled:opacity-60"
                           >
                             {runningId ===
                             endpoint.id
@@ -1194,7 +1194,7 @@ export default function ProjectPage() {
                                 endpoint.name,
                               )
                             }
-                            className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-100"
+                            className="rounded-lg border border-red-400/20 bg-red-400/10 px-4 py-2.5 text-sm font-medium text-red-400 hover:bg-red-400/20"
                           >
                             Delete
                           </button>
@@ -1211,7 +1211,7 @@ export default function ProjectPage() {
                           null &&
                           endpoint.expectedStatus !==
                             undefined && (
-                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                            <span className="rounded-full bg-slate-800/70 px-3 py-1 text-xs font-medium text-slate-500">
                               Expected:{" "}
                               {
                                 endpoint.expectedStatus
@@ -1223,7 +1223,7 @@ export default function ProjectPage() {
                           null &&
                           endpoint.maxResponseTime !==
                             undefined && (
-                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                            <span className="rounded-full bg-slate-800/70 px-3 py-1 text-xs font-medium text-slate-500">
                               Max:{" "}
                               {
                                 endpoint.maxResponseTime
@@ -1237,7 +1237,7 @@ export default function ProjectPage() {
                       {/* LATEST RESULT */}
 
                       {latestResult && (
-                        <div className="mt-5 border-t border-slate-100 pt-5">
+                        <div className="mt-5 border-t border-white/5 pt-5">
 
                           <div className="grid gap-4 md:grid-cols-4">
 
@@ -1281,16 +1281,16 @@ export default function ProjectPage() {
                           </div>
 
                           {latestResult.bugDetected && (
-                            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
+                            <div className="mt-4 rounded-lg border border-red-400/20 bg-red-400/10 p-4">
 
                               <div className="flex flex-wrap items-center gap-2">
 
-                                <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-700">
+                                <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-400">
                                   BUG DETECTED
                                 </span>
 
                                 {latestResult.bugType && (
-                                  <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-red-700">
+                                  <span className="rounded-full bg-slate-900/70 px-3 py-1 text-xs font-medium text-red-400">
                                     {
                                       latestResult.bugType
                                     }
@@ -1300,7 +1300,7 @@ export default function ProjectPage() {
                               </div>
 
                               {latestResult.bugMessage && (
-                                <p className="mt-2 text-sm text-red-700">
+                                <p className="mt-2 text-sm text-red-400">
                                   {
                                     latestResult.bugMessage
                                   }
@@ -1328,16 +1328,16 @@ export default function ProjectPage() {
       ======================================================== */}
 
       {showHistory && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
 
-          <div className="flex max-h-[85vh] w-full max-w-6xl flex-col rounded-2xl bg-white shadow-2xl">
+          <div className="flex max-h-[85vh] w-full max-w-6xl flex-col rounded-2xl border border-white/10 bg-slate-900/95 shadow-2xl">
 
             {/* MODAL HEADER */}
 
-            <div className="flex items-center justify-between border-b border-slate-200 p-6">
+            <div className="flex items-center justify-between border-b border-white/10 p-6">
 
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">
+                <h2 className="text-2xl font-bold text-white">
                   Test History
                 </h2>
 
@@ -1350,7 +1350,7 @@ export default function ProjectPage() {
                 onClick={() =>
                   setShowHistory(false)
                 }
-                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className="rounded-lg border border-white/10 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-900/70/5"
               >
                 Close
               </button>
@@ -1362,9 +1362,9 @@ export default function ProjectPage() {
             <div className="overflow-y-auto p-6">
 
               {results.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-300 p-10 text-center">
+                <div className="rounded-xl border border-dashed border-white/10 p-10 text-center">
 
-                  <p className="font-medium text-slate-700">
+                  <p className="font-medium text-slate-300">
                     No test results yet.
                   </p>
 
@@ -1379,7 +1379,7 @@ export default function ProjectPage() {
 
                   <table className="w-full text-left text-sm">
 
-                    <thead className="border-b border-slate-200 text-slate-500">
+                    <thead className="border-b border-white/10 text-slate-500">
 
                       <tr>
                         <th className="px-4 py-3">
@@ -1427,22 +1427,22 @@ export default function ProjectPage() {
                           return (
                             <tr
                               key={result.id}
-                              className="border-b border-slate-100"
+                              className="border-b border-white/5"
                             >
 
-                              <td className="px-4 py-4 font-medium text-slate-900">
+                              <td className="px-4 py-4 font-medium text-white">
                                 {endpoint?.name ||
                                   "Unknown"}
                               </td>
 
-                              <td className="px-4 py-4 text-slate-700">
+                              <td className="px-4 py-4 text-slate-300">
                                 {
                                   result.statusCode ??
                                   "Error"
                                 }
                               </td>
 
-                              <td className="px-4 py-4 text-slate-700">
+                              <td className="px-4 py-4 text-slate-300">
                                 {
                                   result.responseTime
                                 }{" "}
@@ -1452,11 +1452,11 @@ export default function ProjectPage() {
                               <td className="px-4 py-4">
 
                                 {result.success ? (
-                                  <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
+                                  <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-400">
                                     PASS
                                   </span>
                                 ) : (
-                                  <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">
+                                  <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-400">
                                     FAIL
                                   </span>
                                 )}
@@ -1468,12 +1468,12 @@ export default function ProjectPage() {
                                 {result.bugDetected ? (
                                   <div className="flex flex-col gap-1">
 
-                                    <span className="w-fit rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">
+                                    <span className="w-fit rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-400">
                                       YES
                                     </span>
 
                                     {result.bugType && (
-                                      <span className="text-xs text-red-600">
+                                      <span className="text-xs text-red-400">
                                         {
                                           result.bugType
                                         }
@@ -1482,7 +1482,7 @@ export default function ProjectPage() {
 
                                   </div>
                                 ) : (
-                                  <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
+                                  <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-400">
                                     NO
                                   </span>
                                 )}
@@ -1504,7 +1504,7 @@ export default function ProjectPage() {
                                       result.endpointId,
                                     )
                                   }
-                                  className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-100"
+                                  className="rounded-lg border border-red-400/20 bg-red-400/10 px-3 py-2 text-xs font-medium text-red-400 hover:bg-red-400/20"
                                 >
                                   Delete
                                 </button>
@@ -1552,10 +1552,10 @@ function ResultItem({
       <p
         className={`mt-1 font-semibold ${
           success === true
-            ? "text-green-600"
+            ? "text-emerald-400"
             : success === false
-              ? "text-red-600"
-              : "text-slate-900"
+              ? "text-red-400"
+              : "text-white"
         }`}
       >
         {value}
