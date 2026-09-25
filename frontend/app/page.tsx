@@ -1,46 +1,169 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import {
+  FormEvent,
+  useState,
+} from "react";
+
+import Script from "next/script";
+
+type Mode = "login" | "register";
 
 export default function Home() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [mode, setMode] =
+    useState<Mode>("login");
 
-  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+  const [name, setName] =
+    useState("");
+
+  const [email, setEmail] =
+    useState("");
+
+  const [password, setPassword] =
+    useState("");
+
+  const [message, setMessage] =
+    useState("");
+
+  const [loading, setLoading] =
+    useState(false);
+
+  // =========================
+  // FORM SUBMIT
+  // =========================
+
+  async function handleSubmit(
+    event: FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault();
 
-    setLoading(true);
     setMessage("");
 
-    try {
-      const response = await fetch(
-        "http://localhost:5000/auth/login",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            email,
-            password,
-          }),
-        },
+    // Basic validation
+    if (!email || !password) {
+      setMessage(
+        "Please enter email and password.",
       );
 
-      const data = await response.json();
+      return;
+    }
 
-      if (!response.ok) {
-        throw new Error(data.message || "Login failed");
+    if (mode === "register" && !name) {
+      setMessage(
+        "Please enter your name.",
+      );
+
+      return;
+    }
+
+    if (
+      mode === "register" &&
+      password.length < 6
+    ) {
+      setMessage(
+        "Password must be at least 6 characters.",
+      );
+
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // =========================
+      // REGISTER
+      // =========================
+
+      if (mode === "register") {
+        const response =
+          await fetch(
+            "http://localhost:5000/auth/register",
+            {
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+              body: JSON.stringify({
+                name,
+                email,
+                password,
+              }),
+            },
+          );
+
+        const data =
+          await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            Array.isArray(data.message)
+              ? data.message.join(", ")
+              : data.message ||
+                  "Registration failed",
+          );
+        }
+
+        // Registration successful
+        setMessage(
+          "Account created successfully. Please login.",
+        );
+
+        // Switch to login
+        setMode("login");
+
+        // Keep email so user doesn't
+        // need to type it again
+        setPassword("");
+
+        return;
       }
 
+      // =========================
+      // LOGIN
+      // =========================
+
+      const response =
+        await fetch(
+          "http://localhost:5000/auth/login",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body: JSON.stringify({
+              email,
+              password,
+            }),
+          },
+        );
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          Array.isArray(data.message)
+            ? data.message.join(", ")
+            : data.message ||
+                "Login failed",
+        );
+      }
+
+      // Save JWT
       localStorage.setItem(
         "accessToken",
         data.accessToken,
       );
 
-      window.location.href = "/dashboard";
+      // Go to dashboard
+      window.location.href =
+        "/dashboard";
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -52,210 +175,439 @@ export default function Home() {
     }
   }
 
+  // =========================
+  // SWITCH LOGIN / REGISTER
+  // =========================
+
+  function switchMode(
+    newMode: Mode,
+  ) {
+    setMode(newMode);
+    setMessage("");
+    setPassword("");
+  }
+
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 py-8 sm:px-6 lg:px-8">
+    <>
+      {/* Google script can remain here
+          for future Google OAuth integration */}
+      <Script
+        src="https://accounts.google.com/gsi/client"
+        strategy="afterInteractive"
+      />
 
-      {/* =====================================================
-          ANIMATED BACKGROUND
-      ====================================================== */}
+      {/* =========================
+          GLOBAL ANIMATIONS
+      ========================= */}
 
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      <style jsx global>{`
+        @keyframes autoapiLeftRight {
+          0% {
+            transform: translateX(-45%);
+          }
 
-        {/* Main gradient glow */}
-        <div className="absolute left-1/2 top-1/2 h-[350px] w-[350px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-500/10 blur-[90px] sm:h-[500px] sm:w-[500px] sm:blur-[110px] lg:h-[600px] lg:w-[600px] lg:blur-[120px]" />
+          50% {
+            transform: translateX(45%);
+          }
 
-        {/* Blue glow */}
-        <div className="absolute -left-24 -top-24 h-[250px] w-[250px] rounded-full bg-blue-600/20 blur-[80px] animate-pulse sm:-left-32 sm:-top-32 sm:h-[350px] sm:w-[350px] sm:blur-[100px] lg:h-[400px] lg:w-[400px]" />
+          100% {
+            transform: translateX(-45%);
+          }
+        }
 
-        {/* Violet glow */}
-        <div className="absolute -bottom-24 -right-24 h-[250px] w-[250px] rounded-full bg-violet-600/20 blur-[80px] animate-pulse sm:-bottom-32 sm:-right-32 sm:h-[350px] sm:w-[350px] sm:blur-[100px] lg:h-[400px] lg:w-[400px]" />
-      </div>
+        @keyframes autoapiRightLeft {
+          0% {
+            transform: translateX(45%);
+          }
 
-      {/* =====================================================
-          PROJECT NAME BACKGROUND
-      ====================================================== */}
+          50% {
+            transform: translateX(-45%);
+          }
 
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden">
+          100% {
+            transform: translateX(45%);
+          }
+        }
 
-        {/* Large background text */}
-        <div className="absolute whitespace-nowrap text-[18vw] font-black tracking-[0.08em] text-white/[0.025] animate-pulse sm:text-[14vw] sm:tracking-[0.1em] md:text-[11vw] md:tracking-[0.15em]">
-          AUTOAPI SENTINEL
+        @keyframes autoapiSlow {
+          0% {
+            transform: translateX(-20%);
+          }
+
+          50% {
+            transform: translateX(20%);
+          }
+
+          100% {
+            transform: translateX(-20%);
+          }
+        }
+
+        @keyframes floatSlow {
+          0%,
+          100% {
+            transform: translateY(0px);
+          }
+
+          50% {
+            transform: translateY(-15px);
+          }
+        }
+
+        @keyframes pulseGlow {
+          0%,
+          100% {
+            opacity: 0.35;
+          }
+
+          50% {
+            opacity: 0.7;
+          }
+        }
+
+        @keyframes buttonGlow {
+          0%,
+          100% {
+            box-shadow:
+              0 0 0 rgba(34, 211, 238, 0);
+          }
+
+          50% {
+            box-shadow:
+              0 0 35px rgba(34, 211, 238, 0.18);
+          }
+        }
+
+        .autoapi-left-right {
+          animation:
+            autoapiLeftRight
+            18s
+            ease-in-out
+            infinite;
+        }
+
+        .autoapi-right-left {
+          animation:
+            autoapiRightLeft
+            24s
+            ease-in-out
+            infinite;
+        }
+
+        .autoapi-slow {
+          animation:
+            autoapiSlow
+            32s
+            ease-in-out
+            infinite;
+        }
+
+        .float-slow {
+          animation:
+            floatSlow
+            7s
+            ease-in-out
+            infinite;
+        }
+
+        .pulse-glow {
+          animation:
+            pulseGlow
+            4s
+            ease-in-out
+            infinite;
+        }
+
+        .button-glow {
+          animation:
+            buttonGlow
+            3s
+            ease-in-out
+            infinite;
+        }
+      `}</style>
+
+      {/* =========================
+          PAGE
+      ========================= */}
+
+      <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 py-10">
+
+        {/* =========================
+            BACKGROUND GLOWS
+        ========================= */}
+
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+
+          <div className="absolute left-[-15%] top-[-10%] h-[500px] w-[500px] rounded-full bg-cyan-500/10 blur-[120px]" />
+
+          <div className="absolute bottom-[-15%] right-[-10%] h-[550px] w-[550px] rounded-full bg-violet-600/10 blur-[130px]" />
+
+          <div className="absolute left-[40%] top-[30%] h-[350px] w-[350px] rounded-full bg-blue-600/5 blur-[110px]" />
+
+          {/* =========================
+              MOVING AUTOAPI TEXT
+          ========================= */}
+
+          <div className="absolute left-0 top-[10%] w-full whitespace-nowrap opacity-[0.035]">
+            <div className="autoapi-left-right text-[80px] font-black tracking-[0.2em] text-cyan-300 sm:text-[130px]">
+              AUTOAPI SENTINEL
+            </div>
+          </div>
+
+          <div className="absolute left-0 top-[42%] w-full whitespace-nowrap opacity-[0.025]">
+            <div className="autoapi-right-left text-[70px] font-black tracking-[0.25em] text-violet-300 sm:text-[120px]">
+              AUTOAPI SENTINEL
+            </div>
+          </div>
+
+          <div className="absolute left-0 top-[75%] w-full whitespace-nowrap opacity-[0.025]">
+            <div className="autoapi-slow text-[60px] font-black tracking-[0.25em] text-blue-300 sm:text-[110px]">
+              AUTOAPI SENTINEL
+            </div>
+          </div>
+
+          {/* API symbols */}
+
+          <div className="float-slow absolute left-[8%] top-[25%] text-5xl font-bold text-cyan-400/10">
+            {"{ }"}
+          </div>
+
+          <div className="float-slow absolute right-[10%] top-[20%] text-5xl font-bold text-violet-400/10">
+            {"</>"}
+          </div>
+
+          <div className="float-slow absolute bottom-[20%] left-[12%] text-4xl font-bold text-blue-400/10">
+            {"API"}
+          </div>
+
+          <div className="float-slow absolute bottom-[25%] right-[12%] text-4xl font-bold text-emerald-400/10">
+            {"200"}
+          </div>
         </div>
 
-        {/* Moving text layer */}
-        <div className="absolute -rotate-6 whitespace-nowrap text-[13vw] font-black tracking-[0.1em] text-cyan-400/[0.035] sm:text-[10vw] sm:tracking-[0.15em] md:text-[8vw] md:tracking-[0.2em]">
-          AUTOAPI SENTINEL
-        </div>
+        {/* =========================
+            LOGIN CONTAINER
+        ========================= */}
 
-        {/* Another layer */}
-        <div className="absolute rotate-6 whitespace-nowrap text-[11vw] font-black tracking-[0.12em] text-violet-400/[0.035] sm:text-[8vw] sm:tracking-[0.18em] md:text-[6vw] md:tracking-[0.25em]">
-          AUTOAPI SENTINEL
-        </div>
-      </div>
+        <div className="relative z-10 w-full max-w-md">
 
-      {/* =====================================================
-          ANIMATED API SYMBOLS
-      ====================================================== */}
+          <div className="relative w-full bg-transparent px-2 py-4 sm:px-6 sm:py-6">
 
-      <div className="pointer-events-none absolute inset-0 hidden overflow-hidden sm:block">
+            {/* Top accent */}
 
-        <div className="absolute left-[6%] top-[18%] animate-bounce text-xs font-mono text-cyan-400/30 md:left-[10%] md:text-sm">
-          {"{ status: 200 }"}
-        </div>
-
-        <div className="absolute right-[6%] top-[25%] animate-pulse text-xs font-mono text-violet-400/30 md:right-[12%] md:text-sm">
-          {"GET /api/test"}
-        </div>
-
-        <div className="absolute bottom-[22%] left-[6%] animate-pulse text-xs font-mono text-blue-400/30 md:left-[12%] md:text-sm">
-          {"POST /analyze"}
-        </div>
-
-        <div className="absolute bottom-[18%] right-[5%] animate-bounce text-xs font-mono text-cyan-400/30 md:right-[10%] md:text-sm">
-          {"BUG_DETECTED: false"}
-        </div>
-
-        <div className="absolute left-[20%] top-[12%] h-1.5 w-1.5 rounded-full bg-cyan-400/40 shadow-[0_0_15px_4px_rgba(34,211,238,0.2)] md:left-[25%] md:h-2 md:w-2" />
-
-        <div className="absolute bottom-[15%] right-[20%] h-1.5 w-1.5 rounded-full bg-violet-400/40 shadow-[0_0_15px_4px_rgba(167,139,250,0.2)] md:right-[25%] md:h-2 md:w-2" />
-      </div>
-
-      {/* =====================================================
-          LOGIN CARD
-      ====================================================== */}
-
-      <div className="relative z-10 w-full max-w-md">
-
-        {/* Glow behind card */}
-        <div className="absolute -inset-1 rounded-[24px] bg-gradient-to-r from-cyan-500/20 via-blue-500/20 to-violet-500/20 blur-xl sm:rounded-[28px]" />
-
-        <div className="relative rounded-[24px] border border-white/10 bg-slate-900/80 p-5 shadow-2xl shadow-black/40 backdrop-blur-xl sm:rounded-[28px] sm:p-8">
-
-          {/* Top accent */}
-          <div className="mx-auto mb-5 h-1 w-14 rounded-full bg-gradient-to-r from-cyan-400 via-blue-500 to-violet-500 sm:mb-6 sm:w-16" />
-
-          {/* Header */}
-          <div className="mb-6 text-center sm:mb-8">
+            <div className="mx-auto mb-6 h-1 w-16 rounded-full bg-gradient-to-r from-cyan-400 via-blue-500 to-violet-500" />
 
             {/* Logo */}
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-cyan-400/10 to-violet-500/10 shadow-lg shadow-cyan-500/10 sm:mb-5 sm:h-16 sm:w-16">
-              <div className="text-xl font-black text-cyan-400 sm:text-2xl">
-                AS
+
+            <div className="float-slow mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-cyan-400/20 bg-cyan-400/5 shadow-[0_0_40px_rgba(34,211,238,0.12)]">
+              <div className="text-xl font-black text-cyan-300">
+                API
               </div>
             </div>
 
-            <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
-              AutoAPI Sentinel
-            </h1>
+            {/* Heading */}
 
-            <p className="mx-auto mt-2 max-w-xs text-xs leading-5 text-slate-400 sm:text-sm sm:leading-normal">
-              Autonomous API Testing & Bug Discovery
-            </p>
+            <div className="text-center">
 
-            <div className="mx-auto mt-4 flex w-fit max-w-full items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/5 px-3 py-1.5">
-              <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-emerald-400" />
+              <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">
+                AutoAPI{" "}
+                <span className="bg-gradient-to-r from-cyan-300 via-blue-400 to-violet-400 bg-clip-text text-transparent">
+                  Sentinel
+                </span>
+              </h1>
 
-              <span className="text-[11px] font-medium text-emerald-400 sm:text-xs">
-                Intelligent API Monitoring
-              </span>
+              <p className="mt-3 text-sm text-slate-400">
+                Autonomous API Testing &
+                Bug Discovery
+              </p>
+
+              {/* Status */}
+
+              <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/5 px-3 py-1.5 text-xs text-emerald-300">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]" />
+
+                System operational
+              </div>
             </div>
-          </div>
 
-          {/* Login Form */}
-          <form
-            onSubmit={handleLogin}
-            className="space-y-4 sm:space-y-5"
-          >
+            {/* =========================
+                FORM
+            ========================= */}
 
-            {/* Email */}
-            <div>
-              <label
-                htmlFor="email"
-                className="mb-2 block text-sm font-medium text-slate-300"
-              >
-                Email
-              </label>
+            <form
+              onSubmit={handleSubmit}
+              className="mt-8 space-y-5"
+            >
 
-              <div className="group relative">
+              {/* NAME */}
 
-                <div className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-cyan-500/0 via-cyan-500/0 to-violet-500/0 transition duration-300 group-focus-within:from-cyan-500/50 group-focus-within:via-blue-500/30 group-focus-within:to-violet-500/50" />
+              {mode === "register" && (
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">
+                    Name
+                  </label>
+
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) =>
+                      setName(e.target.value)
+                    }
+                    placeholder="Gaurav Kumar"
+                    autoComplete="name"
+                    disabled={loading}
+                    className="w-full rounded-xl border border-white/10 bg-slate-950/35 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400/50 focus:ring-2 focus:ring-cyan-400/10 disabled:opacity-60"
+                  />
+                </div>
+              )}
+
+              {/* EMAIL */}
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">
+                  Email
+                </label>
 
                 <input
-                  id="email"
                   type="email"
                   value={email}
-                  onChange={(event) =>
-                    setEmail(event.target.value)
+                  onChange={(e) =>
+                    setEmail(e.target.value)
                   }
-                  placeholder="Enter your email"
-                  required
+                  placeholder="you@example.com"
                   autoComplete="email"
-                  className="relative w-full rounded-xl border border-white/10 bg-slate-950/70 px-4 py-3.5 text-sm text-white placeholder:text-slate-600 outline-none transition focus:border-transparent sm:text-base"
+                  disabled={loading}
+                  className="w-full rounded-xl border border-white/10 bg-slate-950/35 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400/50 focus:ring-2 focus:ring-cyan-400/10 disabled:opacity-60"
                 />
               </div>
-            </div>
 
-            {/* Password */}
-            <div>
-              <label
-                htmlFor="password"
-                className="mb-2 block text-sm font-medium text-slate-300"
-              >
-                Password
-              </label>
+              {/* PASSWORD */}
 
-              <div className="group relative">
-
-                <div className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-cyan-500/0 via-cyan-500/0 to-violet-500/0 transition duration-300 group-focus-within:from-cyan-500/50 group-focus-within:via-blue-500/30 group-focus-within:to-violet-500/50" />
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-300">
+                  Password
+                </label>
 
                 <input
-                  id="password"
                   type="password"
                   value={password}
-                  onChange={(event) =>
-                    setPassword(event.target.value)
+                  onChange={(e) =>
+                    setPassword(e.target.value)
                   }
-                  placeholder="Enter your password"
-                  required
-                  autoComplete="current-password"
-                  className="relative w-full rounded-xl border border-white/10 bg-slate-950/70 px-4 py-3.5 text-sm text-white placeholder:text-slate-600 outline-none transition focus:border-transparent sm:text-base"
+                  placeholder="••••••••"
+                  autoComplete={
+                    mode === "login"
+                      ? "current-password"
+                      : "new-password"
+                  }
+                  disabled={loading}
+                  className="w-full rounded-xl border border-white/10 bg-slate-950/35 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400/50 focus:ring-2 focus:ring-cyan-400/10 disabled:opacity-60"
                 />
               </div>
+
+              {/* ERROR / SUCCESS */}
+
+              {message && (
+                <div
+                  className={`rounded-xl border px-4 py-3 text-sm ${
+                    message.toLowerCase().includes(
+                      "success",
+                    )
+                      ? "border-emerald-400/20 bg-emerald-400/5 text-emerald-300"
+                      : "border-red-400/20 bg-red-400/5 text-red-300"
+                  }`}
+                >
+                  {message}
+                </div>
+              )}
+
+              {/* SUBMIT BUTTON */}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="button-glow group relative flex w-full items-center justify-center overflow-hidden rounded-xl border border-cyan-400/20 bg-gradient-to-r from-cyan-500 via-blue-600 to-violet-600 px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-cyan-950/30 transition duration-300 hover:scale-[1.01] hover:shadow-cyan-900/40 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {/* Shine */}
+
+                <span className="absolute inset-y-0 -left-20 w-16 rotate-12 bg-white/20 blur-md transition-all duration-700 group-hover:left-[110%]" />
+
+                {loading ? (
+                  <span className="relative flex items-center gap-2">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+
+                    {mode === "login"
+                      ? "Signing in..."
+                      : "Creating account..."}
+                  </span>
+                ) : (
+                  <span className="relative">
+                    {mode === "login"
+                      ? "Sign In"
+                      : "Create Account"}
+                  </span>
+                )}
+              </button>
+            </form>
+
+            {/* =========================
+                SWITCH LOGIN / REGISTER
+            ========================= */}
+
+            <div className="mt-7 text-center text-sm text-slate-500">
+
+              {mode === "login" ? (
+                <>
+                  Don't have an account?{" "}
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      switchMode("register")
+                    }
+                    className="font-semibold text-cyan-400 transition hover:text-cyan-300"
+                  >
+                    Create account
+                  </button>
+                </>
+              ) : (
+                <>
+                  Already have an account?{" "}
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      switchMode("login")
+                    }
+                    className="font-semibold text-cyan-400 transition hover:text-cyan-300"
+                  >
+                    Sign in
+                  </button>
+                </>
+              )}
             </div>
 
-            {/* Error */}
-            {message && (
-              <div className="rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-3 text-xs leading-5 text-red-400 sm:px-4 sm:text-sm">
-                {message}
-              </div>
-            )}
+            {/* =========================
+                SECURITY INFO
+            ========================= */}
 
-            {/* Button */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="group relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-cyan-500 via-blue-600 to-violet-600 px-4 py-3.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition duration-300 hover:scale-[1.01] hover:shadow-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60 sm:text-base"
-            >
-              {/* Button shine */}
-              <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+            <div className="mt-8 border-t border-white/5 pt-5 text-center">
 
-              <span className="relative">
-                {loading ? "Signing in..." : "Sign In"}
-              </span>
-            </button>
-          </form>
+              <p className="text-xs leading-5 text-slate-600">
+                Your credentials are securely
+                hashed and protected.
+              </p>
 
-          {/* Footer */}
-          <div className="mt-6 border-t border-white/5 pt-4 text-center sm:mt-7 sm:pt-5">
-            <p className="text-[11px] text-slate-500 sm:text-xs">
-              Powered by{" "}
-              <span className="font-medium text-slate-400">
-                AutoAPI Sentinel
-              </span>
-            </p>
+              <p className="mt-2 text-[11px] text-slate-700">
+                AutoAPI Sentinel • API
+                Security Platform
+              </p>
+            </div>
+
           </div>
         </div>
-      </div>
-    </main>
+      </main>
+    </>
   );
 }

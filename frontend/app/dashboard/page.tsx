@@ -386,8 +386,24 @@ export default function Dashboard() {
                 ================================================== */}
 
                 {error && (
-                    <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 text-sm leading-6 text-red-400 shadow-[0_0_30px_rgba(239,68,68,0.06)] sm:p-5">
-                        {error}
+                    <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-5 shadow-[0_0_30px_rgba(239,68,68,0.06)]">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0">
+                                <p className="font-semibold text-red-300">
+                                    Unable to load dashboard
+                                </p>
+                                <p className="mt-1 break-words text-sm leading-6 text-red-400/80">
+                                    {error}
+                                </p>
+                            </div>
+
+                            <button
+                                onClick={() => window.location.reload()}
+                                className="inline-flex shrink-0 items-center justify-center rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-2.5 text-sm font-semibold text-red-300 transition hover:bg-red-500/20"
+                            >
+                                ↻ Retry
+                            </button>
+                        </div>
                     </div>
                 )}
 
@@ -680,6 +696,15 @@ export default function Dashboard() {
                                             project.
                                         </p>
 
+                                        <button
+                                            onClick={() => {
+                                                window.location.href = "/projects/new";
+                                            }}
+                                            className="mt-5 inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_0_20px_rgba(37,99,235,0.18)] transition hover:bg-blue-500 hover:shadow-[0_0_25px_rgba(37,99,235,0.3)]"
+                                        >
+                                            + Create Project
+                                        </button>
+
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2">
@@ -697,13 +722,13 @@ export default function Dashboard() {
 
                                                         <div className="min-w-0">
 
-                                                            <h3 className="truncate font-semibold text-white">
+                                                            <h3 className="min-w-0 truncate font-semibold text-white">
                                                                 {
                                                                     project.name
                                                                 }
                                                             </h3>
 
-                                                            <p className="mt-1 break-words text-sm leading-5 text-slate-500">
+                                                            <p className="mt-1 line-clamp-2 break-words text-sm leading-5 text-slate-500">
                                                                 {project.description ||
                                                                     "No description"}
                                                             </p>
@@ -1065,7 +1090,7 @@ export default function Dashboard() {
                                                                             </span>
                                                                         )}
 
-                                                                        <span className="truncate text-xs text-slate-600">
+                                                                        <span className="min-w-0 break-all text-xs leading-5 text-slate-600">
                                                                             {endpoint?.url ||
                                                                                 "No URL"}
                                                                         </span>

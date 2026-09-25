@@ -9,6 +9,10 @@ import {
 
 import { useParams } from "next/navigation";
 
+// ============================================================
+// TYPES
+// ============================================================
+
 type Endpoint = {
   id: string;
   name: string;
@@ -20,6 +24,8 @@ type Endpoint = {
 
   expectedStatus?: number | null;
   maxResponseTime?: number | null;
+
+  expectedResponseSchema?: Record<string, string> | null;
 
   createdAt: string;
 };
@@ -43,24 +49,68 @@ type TestResult = {
   createdAt: string;
 };
 
+// ============================================================
+// CONSTANTS
+// ============================================================
+
+const API_BASE_URL = "http://localhost:5000";
+
+// ============================================================
+// SAFE JSON RESPONSE HELPER
+// ============================================================
+
+async function readJsonResponse(
+  response: Response,
+): Promise<any> {
+  const text = await response.text();
+
+  if (!text) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {
+      message: text,
+    };
+  }
+}
+
+// ============================================================
+// PROJECT PAGE
+// ============================================================
+
 export default function ProjectPage() {
   const params = useParams();
 
   const projectId = params.projectId as string;
 
-  const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
-  const [results, setResults] = useState<TestResult[]>([]);
+  // ==========================================================
+  // DATA STATE
+  // ==========================================================
 
-  const [loading, setLoading] = useState(true);
+  const [endpoints, setEndpoints] =
+    useState<Endpoint[]>([]);
+
+  const [results, setResults] =
+    useState<TestResult[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState("");
+
+  // ==========================================================
+  // TEST STATE
+  // ==========================================================
 
   const [runningId, setRunningId] =
     useState<string | null>(null);
 
-  // ============================================================
-  // RUN ALL TESTS STATE
-  // ============================================================
-
-  const [runningAll, setRunningAll] = useState(false);
+  const [runningAll, setRunningAll] =
+    useState(false);
 
   const [runAllProgress, setRunAllProgress] =
     useState({
@@ -76,6 +126,10 @@ export default function ProjectPage() {
       bugs: number;
     } | null>(null);
 
+  // ==========================================================
+  // UI STATE
+  // ==========================================================
+
   const [addingEndpoint, setAddingEndpoint] =
     useState(false);
 
@@ -88,11 +142,9 @@ export default function ProjectPage() {
   const [selectedResult, setSelectedResult] =
     useState<TestResult | null>(null);
 
-  const [error, setError] = useState("");
-
-  // ============================================================
+  // ==========================================================
   // ADD ENDPOINT FORM STATE
-  // ============================================================
+  // ==========================================================
 
   const [endpointName, setEndpointName] =
     useState("");
@@ -115,9 +167,22 @@ export default function ProjectPage() {
   const [maxResponseTime, setMaxResponseTime] =
     useState("1000");
 
-  // ============================================================
+  // NEW:
+  // Expected response schema
+  //
+  // Example:
+  // {
+  //   "id": "integer",
+  //   "name": "string",
+  //   "active": "boolean"
+  // }
+
+  const [expectedResponseSchema, setExpectedResponseSchema] =
+    useState("");
+
+  // ==========================================================
   // LOAD ENDPOINTS
-  // ============================================================
+  // ==========================================================
 
   async function loadEndpoints() {
     try {
@@ -133,7 +198,7 @@ export default function ProjectPage() {
       }
 
       const response = await fetch(
-        `http://localhost:5000/projects/${projectId}/endpoints`,
+        `${API_BASE_URL}/projects/${projectId}/endpoints`,
         {
           method: "GET",
           headers: {
@@ -142,7 +207,8 @@ export default function ProjectPage() {
         },
       );
 
-      const data = await response.json();
+      const data =
+        await readJsonResponse(response);
 
       if (!response.ok) {
         throw new Error(
@@ -151,7 +217,9 @@ export default function ProjectPage() {
         );
       }
 
-      setEndpoints(data);
+      setEndpoints(
+        Array.isArray(data) ? data : [],
+      );
     } catch (err) {
       setError(
         err instanceof Error
@@ -163,9 +231,9 @@ export default function ProjectPage() {
     }
   }
 
-  // ============================================================
+  // ==========================================================
   // LOAD TEST RESULTS
-  // ============================================================
+  // ==========================================================
 
   async function loadResults(
     currentEndpoints: Endpoint[],
@@ -178,35 +246,48 @@ export default function ProjectPage() {
         return;
       }
 
-      const allResults: TestResult[] = [];
+      const allResults: TestResult[] =
+        [];
 
       for (const endpoint of currentEndpoints) {
-        const response = await fetch(
-          `http://localhost:5000/projects/${projectId}/endpoints/${endpoint.id}/results`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
+        try {
+          const response = await fetch(
+            `${API_BASE_URL}/projects/${projectId}/endpoints/${endpoint.id}/results`,
+            {
+              method: "GET",
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
             },
-          },
-        );
+          );
 
-        if (!response.ok) {
-          continue;
+          if (!response.ok) {
+            continue;
+          }
+
+          const data =
+            await readJsonResponse(response);
+
+          if (Array.isArray(data)) {
+            allResults.push(
+              ...(data as TestResult[]),
+            );
+          }
+        } catch {
+          // Continue loading history
+          // for remaining endpoints.
         }
-
-        const data = await response.json();
-
-        allResults.push(
-          ...(data as TestResult[]),
-        );
       }
 
       // Latest result first
       allResults.sort(
         (a, b) =>
-          new Date(b.createdAt).getTime() -
-          new Date(a.createdAt).getTime(),
+          new Date(
+            b.createdAt,
+          ).getTime() -
+          new Date(
+            a.createdAt,
+          ).getTime(),
       );
 
       // Keep latest 50 results
@@ -214,13 +295,158 @@ export default function ProjectPage() {
         allResults.slice(0, 50),
       );
     } catch {
-      // Keep page usable if history loading fails.
+      // History failure should not break page.
     }
   }
 
-  // ============================================================
+  // ==========================================================
+  // VALIDATE JSON OBJECT
+  // ==========================================================
+
+  function parseJsonObject(
+    value: string,
+    fieldName: string,
+  ): Record<string, unknown> | undefined {
+    if (!value.trim()) {
+      return undefined;
+    }
+
+    let parsed: unknown;
+
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      throw new Error(
+        `${fieldName} must contain valid JSON.`,
+      );
+    }
+
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      throw new Error(
+        `${fieldName} must be a JSON object.`,
+      );
+    }
+
+    return parsed as Record<
+      string,
+      unknown
+    >;
+  }
+
+  // ==========================================================
+  // VALIDATE HEADERS
+  // ==========================================================
+
+  function parseHeaders(
+    value: string,
+  ):
+    | Record<string, string>
+    | undefined {
+    if (!value.trim()) {
+      return undefined;
+    }
+
+    const parsed =
+      parseJsonObject(
+        value,
+        "Headers",
+      );
+
+    if (!parsed) {
+      return undefined;
+    }
+
+    const headers: Record<
+      string,
+      string
+    > = {};
+
+    for (const [key, headerValue] of Object.entries(
+      parsed,
+    )) {
+      if (
+        typeof headerValue !==
+        "string"
+      ) {
+        throw new Error(
+          `Header "${key}" must have a string value.`,
+        );
+      }
+
+      headers[key] = headerValue;
+    }
+
+    return headers;
+  }
+
+  // ==========================================================
+  // VALIDATE RESPONSE SCHEMA
+  // ==========================================================
+
+  function parseResponseSchema(
+    value: string,
+  ):
+    | Record<string, string>
+    | undefined {
+    if (!value.trim()) {
+      return undefined;
+    }
+
+    const parsed =
+      parseJsonObject(
+        value,
+        "Expected Response Schema",
+      );
+
+    if (!parsed) {
+      return undefined;
+    }
+
+    const allowedTypes = [
+      "string",
+      "integer",
+      "number",
+      "float",
+      "boolean",
+    ];
+
+    const schema: Record<
+      string,
+      string
+    > = {};
+
+    for (const [key, type] of Object.entries(
+      parsed,
+    )) {
+      if (typeof type !== "string") {
+        throw new Error(
+          `Schema field "${key}" must contain a type string.`,
+        );
+      }
+
+      if (
+        !allowedTypes.includes(
+          type,
+        )
+      ) {
+        throw new Error(
+          `Invalid type "${type}" for schema field "${key}". Allowed types: string, integer, number, float, boolean.`,
+        );
+      }
+
+      schema[key] = type;
+    }
+
+    return schema;
+  }
+
+  // ==========================================================
   // ADD ENDPOINT
-  // ============================================================
+  // ==========================================================
 
   async function addEndpoint(
     event: FormEvent<HTMLFormElement>,
@@ -229,9 +455,9 @@ export default function ProjectPage() {
 
     setError("");
 
-    // ----------------------------------------------------------
+    // --------------------------------------------------------
     // BASIC VALIDATION
-    // ----------------------------------------------------------
+    // --------------------------------------------------------
 
     if (!endpointName.trim()) {
       setError(
@@ -241,13 +467,39 @@ export default function ProjectPage() {
     }
 
     if (!endpointUrl.trim()) {
-      setError("API URL is required.");
+      setError(
+        "API URL is required.",
+      );
       return;
     }
 
-    // ----------------------------------------------------------
+    // --------------------------------------------------------
+    // URL VALIDATION
+    // --------------------------------------------------------
+
+    try {
+      const parsedUrl = new URL(
+        endpointUrl.trim(),
+      );
+
+      if (
+        parsedUrl.protocol !==
+          "http:" &&
+        parsedUrl.protocol !==
+          "https:"
+      ) {
+        throw new Error();
+      }
+    } catch {
+      setError(
+        "Please enter a valid HTTP or HTTPS API URL.",
+      );
+      return;
+    }
+
+    // --------------------------------------------------------
     // EXPECTED STATUS VALIDATION
-    // ----------------------------------------------------------
+    // --------------------------------------------------------
 
     const parsedExpectedStatus =
       expectedStatus.trim()
@@ -255,7 +507,8 @@ export default function ProjectPage() {
         : undefined;
 
     if (
-      parsedExpectedStatus !== undefined &&
+      parsedExpectedStatus !==
+        undefined &&
       (!Number.isInteger(
         parsedExpectedStatus,
       ) ||
@@ -265,13 +518,12 @@ export default function ProjectPage() {
       setError(
         "Expected Status Code must be between 100 and 599.",
       );
-
       return;
     }
 
-    // ----------------------------------------------------------
+    // --------------------------------------------------------
     // RESPONSE TIME VALIDATION
-    // ----------------------------------------------------------
+    // --------------------------------------------------------
 
     const parsedMaxResponseTime =
       maxResponseTime.trim()
@@ -279,7 +531,8 @@ export default function ProjectPage() {
         : undefined;
 
     if (
-      parsedMaxResponseTime !== undefined &&
+      parsedMaxResponseTime !==
+        undefined &&
       (!Number.isInteger(
         parsedMaxResponseTime,
       ) ||
@@ -288,55 +541,55 @@ export default function ProjectPage() {
       setError(
         "Max Response Time must be greater than 0.",
       );
-
       return;
     }
 
-    // ----------------------------------------------------------
-    // PARSE HEADERS + BODY
-    // ----------------------------------------------------------
+    // --------------------------------------------------------
+    // PARSE JSON FIELDS
+    // --------------------------------------------------------
 
     let parsedHeaders:
       | Record<string, string>
       | undefined;
 
-    let parsedBody: unknown;
+    let parsedBody:
+      | Record<string, unknown>
+      | undefined;
+
+    let parsedSchema:
+      | Record<string, string>
+      | undefined;
 
     try {
-      if (endpointHeaders.trim()) {
-        const headers =
-          JSON.parse(endpointHeaders);
-
-        if (
-          typeof headers !== "object" ||
-          headers === null ||
-          Array.isArray(headers)
-        ) {
-          throw new Error();
-        }
-
-        parsedHeaders =
-          headers as Record<
-            string,
-            string
-          >;
-      }
+      parsedHeaders =
+        parseHeaders(
+          endpointHeaders,
+        );
 
       if (endpointBody.trim()) {
         parsedBody =
-          JSON.parse(endpointBody);
+          parseJsonObject(
+            endpointBody,
+            "Request Body",
+          );
       }
-    } catch {
-      setError(
-        "Headers and Request Body must contain valid JSON.",
-      );
 
+      parsedSchema =
+        parseResponseSchema(
+          expectedResponseSchema,
+        );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Invalid JSON input.",
+      );
       return;
     }
 
-    // ----------------------------------------------------------
+    // --------------------------------------------------------
     // SEND REQUEST
-    // ----------------------------------------------------------
+    // --------------------------------------------------------
 
     try {
       setAddingEndpoint(true);
@@ -352,13 +605,14 @@ export default function ProjectPage() {
       }
 
       const response = await fetch(
-        `http://localhost:5000/projects/${projectId}/endpoints`,
+        `${API_BASE_URL}/projects/${projectId}/endpoints`,
         {
           method: "POST",
 
           headers: {
             "Content-Type":
               "application/json",
+
             Authorization: `Bearer ${token}`,
           },
 
@@ -378,11 +632,17 @@ export default function ProjectPage() {
 
             maxResponseTime:
               parsedMaxResponseTime,
+
+            expectedResponseSchema:
+              parsedSchema,
           }),
         },
       );
 
-      const data = await response.json();
+      const data =
+        await readJsonResponse(
+          response,
+        );
 
       if (!response.ok) {
         throw new Error(
@@ -391,15 +651,17 @@ export default function ProjectPage() {
         );
       }
 
-      // New endpoint appears at TOP
-      setEndpoints((current) => [
-        data,
-        ...current,
-      ]);
+      // New endpoint at TOP
+      setEndpoints(
+        (current) => [
+          data,
+          ...current,
+        ],
+      );
 
-      // --------------------------------------------------------
+      // ------------------------------------------------------
       // RESET FORM
-      // --------------------------------------------------------
+      // ------------------------------------------------------
 
       setEndpointName("");
       setEndpointMethod("GET");
@@ -408,6 +670,7 @@ export default function ProjectPage() {
       setEndpointBody("");
       setExpectedStatus("200");
       setMaxResponseTime("1000");
+      setExpectedResponseSchema("");
 
       setShowAddForm(false);
     } catch (err) {
@@ -421,15 +684,17 @@ export default function ProjectPage() {
     }
   }
 
-  // ============================================================
+  // ==========================================================
   // EXECUTE SINGLE TEST
-  // ============================================================
+  // ==========================================================
 
   async function executeTest(
     endpointId: string,
   ): Promise<TestResult | null> {
     const token =
-      localStorage.getItem("accessToken");
+      localStorage.getItem(
+        "accessToken",
+      );
 
     if (!token) {
       window.location.href = "/";
@@ -437,7 +702,7 @@ export default function ProjectPage() {
     }
 
     const response = await fetch(
-      `http://localhost:5000/projects/${projectId}/endpoints/${endpointId}/run`,
+      `${API_BASE_URL}/projects/${projectId}/endpoints/${endpointId}/run`,
       {
         method: "POST",
 
@@ -447,11 +712,15 @@ export default function ProjectPage() {
       },
     );
 
-    const data = await response.json();
+    const data =
+      await readJsonResponse(
+        response,
+      );
 
     if (!response.ok) {
       throw new Error(
-        data.message || "Test failed",
+        data.message ||
+          "Test failed",
       );
     }
 
@@ -464,9 +733,12 @@ export default function ProjectPage() {
         data.statusCode ?? null,
 
       responseTime:
-        data.responseTime,
+        Number(
+          data.responseTime ?? 0,
+        ),
 
-      success: data.success,
+      success:
+        Boolean(data.success),
 
       responseBody:
         data.responseBody,
@@ -475,7 +747,9 @@ export default function ProjectPage() {
         data.error ?? null,
 
       bugDetected:
-        data.bugDetected ?? false,
+        Boolean(
+          data.bugDetected,
+        ),
 
       bugType:
         data.bugType ?? null,
@@ -488,9 +762,9 @@ export default function ProjectPage() {
     };
   }
 
-  // ============================================================
+  // ==========================================================
   // RUN SINGLE TEST
-  // ============================================================
+  // ==========================================================
 
   async function runTest(
     endpointId: string,
@@ -501,35 +775,38 @@ export default function ProjectPage() {
       setRunAllSummary(null);
 
       const newResult =
-        await executeTest(endpointId);
+        await executeTest(
+          endpointId,
+        );
 
       if (!newResult) {
         return;
       }
 
-      // Latest test goes to TOP
-      setResults((current) => {
-        const updated = [
-          newResult,
-          ...current.filter(
-            (item) =>
-              item.id !==
-              newResult.id,
-          ),
-        ];
+      setResults(
+        (current) => {
+          const updated = [
+            newResult,
+            ...current.filter(
+              (item) =>
+                item.id !==
+                newResult.id,
+            ),
+          ];
 
-        return updated
-          .sort(
-            (a, b) =>
-              new Date(
-                b.createdAt,
-              ).getTime() -
-              new Date(
-                a.createdAt,
-              ).getTime(),
-          )
-          .slice(0, 50);
-      });
+          return updated
+            .sort(
+              (a, b) =>
+                new Date(
+                  b.createdAt,
+                ).getTime() -
+                new Date(
+                  a.createdAt,
+                ).getTime(),
+            )
+            .slice(0, 50);
+        },
+      );
     } catch (err) {
       setError(
         err instanceof Error
@@ -541,9 +818,9 @@ export default function ProjectPage() {
     }
   }
 
-  // ============================================================
+  // ==========================================================
   // RUN ALL TESTS
-  // ============================================================
+  // ==========================================================
 
   async function runAllTests() {
     if (
@@ -571,10 +848,7 @@ export default function ProjectPage() {
       const newResults: TestResult[] =
         [];
 
-      // --------------------------------------------------------
-      // RUN EVERY ENDPOINT SEQUENTIALLY
-      // --------------------------------------------------------
-
+      // Run sequentially
       for (
         let i = 0;
         i < endpoints.length;
@@ -597,7 +871,6 @@ export default function ProjectPage() {
           if (result) {
             newResults.push(result);
 
-            // Immediately update UI
             setResults(
               (current) => {
                 const updated = [
@@ -624,17 +897,12 @@ export default function ProjectPage() {
             );
           }
         } catch (err) {
-          // One failed request does NOT stop remaining tests.
           console.error(
             `Failed to run endpoint "${endpoint.name}":`,
             err,
           );
         }
       }
-
-      // --------------------------------------------------------
-      // CALCULATE SUMMARY
-      // --------------------------------------------------------
 
       const passed =
         newResults.filter(
@@ -655,7 +923,8 @@ export default function ProjectPage() {
         ).length;
 
       setRunAllSummary({
-        total: newResults.length,
+        total:
+          newResults.length,
         passed,
         failed,
         bugs,
@@ -671,14 +940,18 @@ export default function ProjectPage() {
     }
   }
 
-  // ============================================================
+  // ==========================================================
   // DELETE ENDPOINT
-  // ============================================================
+  // ==========================================================
 
   async function deleteEndpoint(
     endpointId: string,
     endpointName: string,
   ) {
+    if (runningAll) {
+      return;
+    }
+
     const confirmed =
       window.confirm(
         `Delete "${endpointName}"?\n\nAll test history for this endpoint will also be deleted.`,
@@ -702,7 +975,7 @@ export default function ProjectPage() {
       }
 
       const response = await fetch(
-        `http://localhost:5000/projects/${projectId}/endpoints/${endpointId}`,
+        `${API_BASE_URL}/projects/${projectId}/endpoints/${endpointId}`,
         {
           method: "DELETE",
 
@@ -712,7 +985,10 @@ export default function ProjectPage() {
         },
       );
 
-      const data = await response.json();
+      const data =
+        await readJsonResponse(
+          response,
+        );
 
       if (!response.ok) {
         throw new Error(
@@ -721,25 +997,24 @@ export default function ProjectPage() {
         );
       }
 
-      // Remove endpoint from UI
-      setEndpoints((current) =>
-        current.filter(
-          (endpoint) =>
-            endpoint.id !==
-            endpointId,
-        ),
+      setEndpoints(
+        (current) =>
+          current.filter(
+            (endpoint) =>
+              endpoint.id !==
+              endpointId,
+          ),
       );
 
-      // Remove history
-      setResults((current) =>
-        current.filter(
-          (result) =>
-            result.endpointId !==
-            endpointId,
-        ),
+      setResults(
+        (current) =>
+          current.filter(
+            (result) =>
+              result.endpointId !==
+              endpointId,
+          ),
       );
 
-      // Close selected result
       setSelectedResult(
         (current) => {
           if (
@@ -761,9 +1036,9 @@ export default function ProjectPage() {
     }
   }
 
-  // ============================================================
+  // ==========================================================
   // DELETE TEST RESULT
-  // ============================================================
+  // ==========================================================
 
   async function deleteTestResult(
     resultId: string,
@@ -792,7 +1067,7 @@ export default function ProjectPage() {
       }
 
       const response = await fetch(
-        `http://localhost:5000/projects/${projectId}/endpoints/${endpointId}/results/${resultId}`,
+        `${API_BASE_URL}/projects/${projectId}/endpoints/${endpointId}/results/${resultId}`,
         {
           method: "DELETE",
 
@@ -802,7 +1077,10 @@ export default function ProjectPage() {
         },
       );
 
-      const data = await response.json();
+      const data =
+        await readJsonResponse(
+          response,
+        );
 
       if (!response.ok) {
         throw new Error(
@@ -811,16 +1089,15 @@ export default function ProjectPage() {
         );
       }
 
-      // Remove result from UI
-      setResults((current) =>
-        current.filter(
-          (result) =>
-            result.id !==
-            resultId,
-        ),
+      setResults(
+        (current) =>
+          current.filter(
+            (result) =>
+              result.id !==
+              resultId,
+          ),
       );
 
-      // Close details modal
       setSelectedResult(
         (current) => {
           if (
@@ -841,19 +1118,27 @@ export default function ProjectPage() {
     }
   }
 
-  // ============================================================
+  // ==========================================================
   // INITIAL LOAD
-  // ============================================================
+  // ==========================================================
 
   useEffect(() => {
+    if (!projectId) {
+      return;
+    }
+
     loadEndpoints();
   }, [projectId]);
 
-  // ============================================================
+  // ==========================================================
   // LOAD HISTORY
-  // ============================================================
+  // ==========================================================
 
   useEffect(() => {
+    if (!projectId) {
+      return;
+    }
+
     if (endpoints.length > 0) {
       loadResults(endpoints);
     } else {
@@ -861,9 +1146,9 @@ export default function ProjectPage() {
     }
   }, [endpoints, projectId]);
 
-  // ============================================================
+  // ==========================================================
   // SORT ENDPOINTS BY LATEST ACTIVITY
-  // ============================================================
+  // ==========================================================
 
   const sortedEndpoints =
     useMemo(() => {
@@ -901,26 +1186,26 @@ export default function ProjectPage() {
                   b.createdAt,
                 ).getTime();
 
-          return activityB - activityA;
+          return (
+            activityB - activityA
+          );
         },
       );
     }, [endpoints, results]);
 
-  // ============================================================
+  // ==========================================================
   // UI
-  // ============================================================
+  // ==========================================================
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#020617] px-3 py-4 text-white sm:px-5 sm:py-6 lg:px-8 lg:py-8">
-
       <div className="relative z-10 mx-auto w-full max-w-7xl">
 
-        {/* ======================================================
+        {/* ====================================================
             HEADER
-        ====================================================== */}
+        ==================================================== */}
 
         <div className="mb-6 sm:mb-8">
-
           <button
             onClick={() =>
               (window.location.href =
@@ -932,9 +1217,7 @@ export default function ProjectPage() {
           </button>
 
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-
             <div className="min-w-0">
-
               <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
                 Project Endpoints
               </h1>
@@ -943,10 +1226,7 @@ export default function ProjectPage() {
                 Manage and test your API
                 endpoints.
               </p>
-
             </div>
-
-            {/* ACTION BUTTONS */}
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:flex lg:flex-wrap lg:justify-end">
 
@@ -993,32 +1273,39 @@ export default function ProjectPage() {
                   ? "Close Form"
                   : "+ Add Endpoint"}
               </button>
-
             </div>
           </div>
         </div>
 
-        {/* ======================================================
+        {/* ====================================================
             ERROR
-        ====================================================== */}
+        ==================================================== */}
 
         {error && (
-          <div className="mb-6 break-words rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm leading-6 text-red-400">
-            {error}
+          <div className="mb-6 flex flex-col gap-3 rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm leading-6 text-red-400 sm:flex-row sm:items-start sm:justify-between">
+            <p className="break-words">
+              {error}
+            </p>
+
+            <button
+              onClick={() =>
+                setError("")
+              }
+              className="w-fit shrink-0 rounded-lg border border-red-400/20 px-3 py-1.5 text-xs font-medium text-red-300 transition hover:bg-red-400/10"
+            >
+              Dismiss
+            </button>
           </div>
         )}
 
-        {/* ======================================================
-            RUN ALL TESTS PROGRESS
-        ====================================================== */}
+        {/* ====================================================
+            RUN ALL PROGRESS
+        ==================================================== */}
 
         {runningAll && (
           <div className="mb-6 rounded-2xl border border-violet-400/20 bg-slate-900/70 p-4 shadow-xl backdrop-blur-xl sm:p-5">
-
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-
               <div className="min-w-0">
-
                 <h3 className="font-semibold text-white">
                   Running API Tests
                 </h3>
@@ -1027,18 +1314,15 @@ export default function ProjectPage() {
                   Testing endpoints one by
                   one...
                 </p>
-
               </div>
 
               <span className="w-fit rounded-full bg-violet-400/10 px-3 py-1 text-sm font-medium text-violet-400">
                 {runAllProgress.current} /{" "}
                 {runAllProgress.total}
               </span>
-
             </div>
 
             <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-950">
-
               <div
                 className="h-full rounded-full bg-gradient-to-r from-violet-500 to-cyan-400 transition-all duration-300"
                 style={{
@@ -1052,33 +1336,27 @@ export default function ProjectPage() {
                   }%`,
                 }}
               />
-
             </div>
-
           </div>
         )}
 
-        {/* ======================================================
-            RUN ALL TESTS SUMMARY
-        ====================================================== */}
+        {/* ====================================================
+            RUN ALL SUMMARY
+        ==================================================== */}
 
         {runAllSummary &&
           !runningAll && (
             <div className="mb-6 rounded-2xl border border-white/10 bg-slate-900/70 p-4 shadow-xl backdrop-blur-xl sm:p-5">
-
               <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-
                 <div className="min-w-0">
-
                   <h3 className="font-semibold text-white">
                     Last Run Summary
                   </h3>
 
                   <p className="mt-1 text-sm leading-5 text-slate-500">
-                    Results from the latest Run
-                    All Tests operation.
+                    Results from the latest
+                    Run All Tests operation.
                   </p>
-
                 </div>
 
                 <button
@@ -1091,11 +1369,9 @@ export default function ProjectPage() {
                 >
                   Dismiss
                 </button>
-
               </div>
 
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-
                 <SummaryBox
                   label="Total Tests"
                   value={
@@ -1127,21 +1403,17 @@ export default function ProjectPage() {
                   }
                   color="orange"
                 />
-
               </div>
-
             </div>
           )}
 
-        {/* ======================================================
+        {/* ====================================================
             ADD ENDPOINT FORM
-        ====================================================== */}
+        ==================================================== */}
 
         {showAddForm && (
           <section className="mb-6 rounded-2xl border border-white/10 bg-slate-900/70 p-4 shadow-xl backdrop-blur-xl sm:mb-8 sm:p-6">
-
             <div className="mb-6">
-
               <h2 className="text-lg font-semibold text-white sm:text-xl">
                 Add New Endpoint
               </h2>
@@ -1150,7 +1422,6 @@ export default function ProjectPage() {
                 Add an API endpoint with
                 automatic validation rules.
               </p>
-
             </div>
 
             <form
@@ -1161,9 +1432,7 @@ export default function ProjectPage() {
               {/* NAME + METHOD */}
 
               <div className="grid gap-5 md:grid-cols-2">
-
                 <div className="min-w-0">
-
                   <label
                     htmlFor="endpoint-name"
                     className="mb-2 block text-sm font-medium text-slate-300"
@@ -1183,11 +1452,9 @@ export default function ProjectPage() {
                     placeholder="Get Users"
                     className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-400/40 focus:ring-1 focus:ring-cyan-400/20"
                   />
-
                 </div>
 
                 <div className="min-w-0">
-
                   <label
                     htmlFor="endpoint-method"
                     className="mb-2 block text-sm font-medium text-slate-300"
@@ -1225,15 +1492,12 @@ export default function ProjectPage() {
                       DELETE
                     </option>
                   </select>
-
                 </div>
-
               </div>
 
               {/* URL */}
 
               <div>
-
                 <label
                   htmlFor="endpoint-url"
                   className="mb-2 block text-sm font-medium text-slate-300"
@@ -1253,21 +1517,20 @@ export default function ProjectPage() {
                   placeholder="https://jsonplaceholder.typicode.com/users"
                   className="w-full min-w-0 rounded-xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-400/40 focus:ring-1 focus:ring-cyan-400/20"
                 />
-
               </div>
 
               {/* AUTOMATED VALIDATION */}
 
               <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4 sm:p-5">
-
                 <h3 className="mb-4 font-semibold text-white">
                   Automated Validation
                 </h3>
 
                 <div className="grid gap-5 md:grid-cols-2">
 
-                  <div>
+                  {/* EXPECTED STATUS */}
 
+                  <div>
                     <label
                       htmlFor="expected-status"
                       className="mb-2 block text-sm font-medium text-slate-300"
@@ -1290,11 +1553,11 @@ export default function ProjectPage() {
                       }
                       className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/40"
                     />
-
                   </div>
 
-                  <div>
+                  {/* MAX RESPONSE TIME */}
 
+                  <div>
                     <label
                       htmlFor="max-response-time"
                       className="mb-2 block text-sm font-medium text-slate-300"
@@ -1317,17 +1580,13 @@ export default function ProjectPage() {
                       }
                       className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/40"
                     />
-
                   </div>
-
                 </div>
-
               </div>
 
               {/* HEADERS */}
 
               <div>
-
                 <label
                   htmlFor="endpoint-headers"
                   className="mb-2 block text-sm font-medium text-slate-300"
@@ -1351,13 +1610,11 @@ export default function ProjectPage() {
 }`}
                   className="w-full max-w-full resize-y rounded-xl border border-white/10 bg-slate-900/70 px-4 py-3 font-mono text-xs text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-400/40 focus:ring-1 focus:ring-cyan-400/20 sm:text-sm"
                 />
-
               </div>
 
-              {/* BODY */}
+              {/* REQUEST BODY */}
 
               <div>
-
                 <label
                   htmlFor="endpoint-body"
                   className="mb-2 block text-sm font-medium text-slate-300"
@@ -1379,13 +1636,68 @@ export default function ProjectPage() {
 }`}
                   className="w-full max-w-full resize-y rounded-xl border border-white/10 bg-slate-900/70 px-4 py-3 font-mono text-xs text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-400/40 focus:ring-1 focus:ring-cyan-400/20 sm:text-sm"
                 />
+              </div>
 
+              {/* =================================================
+                  EXPECTED RESPONSE SCHEMA
+              ================================================== */}
+
+              <div>
+                <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <label
+                    htmlFor="expected-response-schema"
+                    className="block text-sm font-medium text-slate-300"
+                  >
+                    Expected Response Schema
+                  </label>
+
+                  <span className="text-[11px] text-slate-600">
+                    Optional
+                  </span>
+                </div>
+
+                <textarea
+                  id="expected-response-schema"
+                  value={
+                    expectedResponseSchema
+                  }
+                  onChange={(event) =>
+                    setExpectedResponseSchema(
+                      event.target.value,
+                    )
+                  }
+                  rows={8}
+                  placeholder={`{
+  "id": "integer",
+  "name": "string",
+  "active": "boolean"
+}`}
+                  className="w-full max-w-full resize-y rounded-xl border border-violet-400/10 bg-slate-900/70 px-4 py-3 font-mono text-xs text-white placeholder:text-slate-500 outline-none transition focus:border-violet-400/40 focus:ring-1 focus:ring-violet-400/20 sm:text-sm"
+                />
+
+                <div className="mt-3 rounded-xl border border-violet-400/10 bg-violet-400/5 p-3">
+                  <p className="text-xs leading-5 text-slate-400">
+                    Define the fields that must
+                    exist in the API response.
+                    Supported types:
+                    <span className="ml-1 text-violet-300">
+                      string, integer, number,
+                      float, boolean
+                    </span>
+                    .
+                  </p>
+
+                  <p className="mt-1 break-words font-mono text-[11px] leading-5 text-slate-600">
+                    Missing fields or wrong
+                    data types will be detected
+                    as bugs.
+                  </p>
+                </div>
               </div>
 
               {/* BUTTONS */}
 
               <div className="grid grid-cols-1 gap-3 sm:flex sm:flex-wrap">
-
                 <button
                   type="submit"
                   disabled={
@@ -1409,31 +1721,34 @@ export default function ProjectPage() {
                 >
                   Cancel
                 </button>
-
               </div>
-
             </form>
-
           </section>
         )}
 
-        {/* ======================================================
+        {/* ====================================================
             ENDPOINTS
-        ====================================================== */}
+        ==================================================== */}
 
         <section className="overflow-hidden rounded-2xl border border-white/10 bg-slate-900/70 p-4 shadow-xl backdrop-blur-xl sm:p-6">
+          <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white sm:text-xl">
+                Endpoints
+              </h2>
 
-          <div className="mb-5">
+              <p className="mt-1 text-sm text-slate-500">
+                Latest activity appears
+                first.
+              </p>
+            </div>
 
-            <h2 className="text-lg font-semibold text-white sm:text-xl">
-              Endpoints
-            </h2>
-
-            <p className="mt-1 text-sm text-slate-500">
-              Latest activity appears
-              first.
-            </p>
-
+            <span className="w-fit rounded-full border border-white/10 bg-slate-950/50 px-3 py-1 text-xs text-slate-500">
+              {endpoints.length}{" "}
+              {endpoints.length === 1
+                ? "endpoint"
+                : "endpoints"}
+            </span>
           </div>
 
           {loading ? (
@@ -1447,7 +1762,6 @@ export default function ProjectPage() {
           ) : sortedEndpoints.length ===
             0 ? (
             <div className="rounded-xl border border-dashed border-white/10 p-8 text-center sm:p-10">
-
               <p className="font-medium text-slate-300">
                 No endpoints found
               </p>
@@ -1457,10 +1771,19 @@ export default function ProjectPage() {
                 above.
               </p>
 
+              {!showAddForm && (
+                <button
+                  onClick={() =>
+                    setShowAddForm(true)
+                  }
+                  className="mt-4 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-2.5 text-sm font-medium text-white transition hover:from-cyan-400 hover:to-blue-500"
+                >
+                  + Add First Endpoint
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
-
               {sortedEndpoints.map(
                 (endpoint) => {
                   const latestResult =
@@ -1489,15 +1812,12 @@ export default function ProjectPage() {
                       {/* ENDPOINT HEADER */}
 
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-
                         <div className="min-w-0">
-
                           <h3 className="break-words font-semibold text-white">
                             {endpoint.name}
                           </h3>
 
                           <div className="mt-2 flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
-
                             <span className="shrink-0 rounded-md bg-cyan-400/10 px-2 py-1 text-xs font-bold text-cyan-400">
                               {endpoint.method}
                             </span>
@@ -1505,15 +1825,12 @@ export default function ProjectPage() {
                             <span className="max-w-full break-all text-xs leading-5 text-slate-500 sm:text-sm">
                               {endpoint.url}
                             </span>
-
                           </div>
-
                         </div>
 
-                        {/* ACTION BUTTONS */}
+                        {/* ACTIONS */}
 
                         <div className="grid grid-cols-2 gap-2 lg:flex lg:shrink-0">
-
                           <button
                             onClick={() =>
                               runTest(
@@ -1547,15 +1864,12 @@ export default function ProjectPage() {
                           >
                             Delete
                           </button>
-
                         </div>
-
                       </div>
 
                       {/* VALIDATION RULES */}
 
                       <div className="mt-4 flex flex-wrap gap-2">
-
                         {endpoint.expectedStatus !==
                           null &&
                           endpoint.expectedStatus !==
@@ -1581,15 +1895,28 @@ export default function ProjectPage() {
                             </span>
                           )}
 
+                        {endpoint.expectedResponseSchema &&
+                          Object.keys(
+                            endpoint.expectedResponseSchema,
+                          ).length >
+                            0 && (
+                            <span className="rounded-full border border-fuchsia-400/10 bg-fuchsia-400/10 px-3 py-1 text-[11px] font-medium text-fuchsia-400 sm:text-xs">
+                              Schema:{" "}
+                              {
+                                Object.keys(
+                                  endpoint.expectedResponseSchema,
+                                ).length
+                              }{" "}
+                              fields
+                            </span>
+                          )}
                       </div>
 
                       {/* LATEST RESULT */}
 
                       {latestResult && (
                         <div className="mt-5 border-t border-white/5 pt-5">
-
                           <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 md:grid-cols-4">
-
                             <ResultItem
                               label="Status Code"
                               value={
@@ -1626,16 +1953,13 @@ export default function ProjectPage() {
                                 !latestResult.bugDetected
                               }
                             />
-
                           </div>
 
                           {/* BUG */}
 
                           {latestResult.bugDetected && (
                             <div className="mt-4 overflow-hidden rounded-xl border border-red-400/20 bg-red-400/10 p-4">
-
                               <div className="flex flex-wrap items-center gap-2">
-
                                 <span className="rounded-full bg-red-400/20 px-3 py-1 text-[10px] font-bold text-red-400 sm:text-xs">
                                   BUG DETECTED
                                 </span>
@@ -1647,7 +1971,6 @@ export default function ProjectPage() {
                                     }
                                   </span>
                                 )}
-
                               </div>
 
                               {latestResult.bugMessage && (
@@ -1657,26 +1980,35 @@ export default function ProjectPage() {
                                   }
                                 </p>
                               )}
-
                             </div>
                           )}
 
+                          {/* VIEW RESULT */}
+
+                          <button
+                            onClick={() =>
+                              setSelectedResult(
+                                latestResult,
+                              )
+                            }
+                            className="mt-4 rounded-lg border border-cyan-400/20 bg-cyan-400/5 px-3 py-2 text-xs font-medium text-cyan-400 transition hover:bg-cyan-400/10"
+                          >
+                            View Latest Result
+                          </button>
                         </div>
                       )}
-
                     </div>
                   );
                 },
               )}
-
             </div>
           )}
         </section>
       </div>
 
-      {/* ========================================================
+      {/* ======================================================
           TEST HISTORY MODAL
-      ======================================================== */}
+      ====================================================== */}
 
       {showHistory && (
         <div
@@ -1685,7 +2017,6 @@ export default function ProjectPage() {
             setShowHistory(false)
           }
         >
-
           <div
             className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900/95 shadow-[0_0_60px_rgba(34,211,238,0.08)]"
             onClick={(event) =>
@@ -1696,9 +2027,7 @@ export default function ProjectPage() {
             {/* MODAL HEADER */}
 
             <div className="flex shrink-0 flex-col gap-3 border-b border-white/10 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-
               <div className="min-w-0">
-
                 <h2 className="text-xl font-bold text-white sm:text-2xl">
                   Test History
                 </h2>
@@ -1706,7 +2035,6 @@ export default function ProjectPage() {
                 <p className="mt-1 text-xs text-slate-500 sm:text-sm">
                   Newest tests appear first.
                 </p>
-
               </div>
 
               <button
@@ -1717,16 +2045,13 @@ export default function ProjectPage() {
               >
                 Close
               </button>
-
             </div>
 
             {/* MODAL CONTENT */}
 
             <div className="overflow-y-auto p-3 sm:p-6">
-
               {results.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-white/10 p-8 text-center sm:p-10">
-
                   <p className="font-medium text-slate-300">
                     No test results yet.
                   </p>
@@ -1735,22 +2060,15 @@ export default function ProjectPage() {
                     Run an endpoint test
                     to create history.
                   </p>
-
                 </div>
               ) : (
                 <>
-                  {/* =================================================
-                      DESKTOP HISTORY TABLE
-                  ================================================== */}
+                  {/* DESKTOP TABLE */}
 
                   <div className="hidden overflow-x-auto md:block">
-
                     <table className="w-full min-w-[900px] text-left text-sm">
-
                       <thead className="border-b border-white/10 text-slate-500">
-
                         <tr>
-
                           <th className="px-4 py-3">
                             Endpoint
                           </th>
@@ -1778,13 +2096,10 @@ export default function ProjectPage() {
                           <th className="px-4 py-3">
                             Action
                           </th>
-
                         </tr>
-
                       </thead>
 
                       <tbody>
-
                         {results.map(
                           (result) => {
                             const endpoint =
@@ -1801,9 +2116,7 @@ export default function ProjectPage() {
                                 }
                                 className="border-b border-white/5 transition hover:bg-white/[0.02]"
                               >
-
                                 <td className="max-w-[220px] px-4 py-4 font-medium text-white">
-
                                   <p className="truncate">
                                     {endpoint?.name ||
                                       "Unknown"}
@@ -1816,7 +2129,6 @@ export default function ProjectPage() {
                                       }
                                     </p>
                                   )}
-
                                 </td>
 
                                 <td className="px-4 py-4 text-slate-300">
@@ -1834,7 +2146,6 @@ export default function ProjectPage() {
                                 </td>
 
                                 <td className="px-4 py-4">
-
                                   {result.success ? (
                                     <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-400">
                                       PASS
@@ -1844,14 +2155,11 @@ export default function ProjectPage() {
                                       FAIL
                                     </span>
                                   )}
-
                                 </td>
 
                                 <td className="px-4 py-4">
-
                                   {result.bugDetected ? (
                                     <div className="flex flex-col gap-1">
-
                                       <span className="w-fit rounded-full bg-red-400/10 px-3 py-1 text-xs font-medium text-red-400">
                                         YES
                                       </span>
@@ -1863,14 +2171,12 @@ export default function ProjectPage() {
                                           }
                                         </span>
                                       )}
-
                                     </div>
                                   ) : (
                                     <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-400">
                                       NO
                                     </span>
                                   )}
-
                                 </td>
 
                                 <td className="whitespace-nowrap px-4 py-4 text-slate-500">
@@ -1880,9 +2186,7 @@ export default function ProjectPage() {
                                 </td>
 
                                 <td className="px-4 py-4">
-
                                   <div className="flex flex-wrap gap-2">
-
                                     <button
                                       onClick={() =>
                                         setSelectedResult(
@@ -1905,28 +2209,19 @@ export default function ProjectPage() {
                                     >
                                       Delete
                                     </button>
-
                                   </div>
-
                                 </td>
-
                               </tr>
                             );
                           },
                         )}
-
                       </tbody>
-
                     </table>
-
                   </div>
 
-                  {/* =================================================
-                      MOBILE HISTORY CARDS
-                  ================================================== */}
+                  {/* MOBILE HISTORY */}
 
                   <div className="space-y-3 md:hidden">
-
                     {results.map(
                       (result) => {
                         const endpoint =
@@ -1943,13 +2238,8 @@ export default function ProjectPage() {
                             }
                             className="rounded-2xl border border-white/10 bg-slate-950/70 p-4"
                           >
-
-                            {/* TOP */}
-
                             <div className="flex items-start justify-between gap-3">
-
                               <div className="min-w-0">
-
                                 <p className="truncate font-semibold text-white">
                                   {endpoint?.name ||
                                     "Unknown"}
@@ -1962,7 +2252,6 @@ export default function ProjectPage() {
                                     }
                                   </p>
                                 )}
-
                               </div>
 
                               <span
@@ -1976,13 +2265,9 @@ export default function ProjectPage() {
                                   ? "PASS"
                                   : "FAIL"}
                               </span>
-
                             </div>
 
-                            {/* DETAILS */}
-
                             <div className="mt-4 grid grid-cols-2 gap-3 border-t border-white/5 pt-4">
-
                               <MobileHistoryItem
                                 label="Status"
                                 value={
@@ -1997,16 +2282,13 @@ export default function ProjectPage() {
                               />
 
                               <div>
-
                                 <p className="text-[10px] uppercase tracking-wider text-slate-600">
                                   Bug
                                 </p>
 
                                 <div className="mt-1">
-
                                   {result.bugDetected ? (
                                     <div className="flex flex-wrap gap-1.5">
-
                                       <span className="rounded-full bg-red-400/10 px-2 py-1 text-[10px] font-bold text-red-400">
                                         YES
                                       </span>
@@ -2018,16 +2300,13 @@ export default function ProjectPage() {
                                           }
                                         </span>
                                       )}
-
                                     </div>
                                   ) : (
                                     <span className="rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-bold text-emerald-400">
                                       NO
                                     </span>
                                   )}
-
                                 </div>
-
                               </div>
 
                               <MobileHistoryItem
@@ -2036,13 +2315,9 @@ export default function ProjectPage() {
                                   result.createdAt,
                                 ).toLocaleString()}
                               />
-
                             </div>
 
-                            {/* ACTIONS */}
-
                             <div className="mt-4 grid grid-cols-2 gap-2 border-t border-white/5 pt-4">
-
                               <button
                                 onClick={() =>
                                   setSelectedResult(
@@ -2065,27 +2340,22 @@ export default function ProjectPage() {
                               >
                                 Delete
                               </button>
-
                             </div>
-
                           </div>
                         );
                       },
                     )}
-
                   </div>
                 </>
               )}
-
             </div>
-
           </div>
         </div>
       )}
 
-      {/* ========================================================
+      {/* ======================================================
           TEST RESULT DETAILS MODAL
-      ======================================================== */}
+      ====================================================== */}
 
       {selectedResult &&
         (() => {
@@ -2103,7 +2373,6 @@ export default function ProjectPage() {
                 setSelectedResult(null)
               }
             >
-
               <div
                 className="flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900/95 shadow-[0_0_60px_rgba(34,211,238,0.08)]"
                 onClick={(event) =>
@@ -2111,14 +2380,11 @@ export default function ProjectPage() {
                 }
               >
 
-                {/* DETAILS HEADER */}
+                {/* HEADER */}
 
                 <div className="flex shrink-0 items-start justify-between gap-3 border-b border-white/10 p-4 sm:p-6">
-
                   <div className="min-w-0">
-
                     <div className="flex flex-wrap items-center gap-2">
-
                       <h2 className="text-lg font-bold text-white sm:text-xl">
                         Test Result Details
                       </h2>
@@ -2132,12 +2398,10 @@ export default function ProjectPage() {
                           FAIL
                         </span>
                       )}
-
                     </div>
 
                     {endpoint && (
                       <div className="mt-2 flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-
                         <span className="shrink-0 rounded-md bg-cyan-400/10 px-2 py-1 text-xs font-bold text-cyan-400">
                           {endpoint.method}
                         </span>
@@ -2145,10 +2409,8 @@ export default function ProjectPage() {
                         <span className="break-all text-xs leading-5 text-slate-400 sm:text-sm">
                           {endpoint.url}
                         </span>
-
                       </div>
                     )}
-
                   </div>
 
                   <button
@@ -2159,17 +2421,15 @@ export default function ProjectPage() {
                   >
                     ✕
                   </button>
-
                 </div>
 
-                {/* DETAILS CONTENT */}
+                {/* CONTENT */}
 
                 <div className="overflow-y-auto p-4 sm:p-6">
 
                   {/* SUMMARY */}
 
                   <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-
                     <DetailCard
                       label="HTTP Status"
                       value={
@@ -2181,7 +2441,8 @@ export default function ProjectPage() {
                           null &&
                         selectedResult.statusCode >=
                           200 &&
-                        selectedResult.statusCode < 400
+                        selectedResult.statusCode <
+                          400
                           ? "text-emerald-400"
                           : "text-red-400"
                       }
@@ -2223,18 +2484,35 @@ export default function ProjectPage() {
                       }
                       valueClass="text-orange-400"
                     />
-
                   </div>
+
+                  {/* SCHEMA */}
+
+                  {endpoint?.expectedResponseSchema &&
+                    Object.keys(
+                      endpoint.expectedResponseSchema,
+                    ).length > 0 && (
+                      <div className="mt-5 rounded-xl border border-violet-400/10 bg-violet-400/5 p-4 sm:mt-6 sm:p-5">
+                        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-violet-300 sm:text-sm">
+                          Expected Response Schema
+                        </h3>
+
+                        <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-white/5 bg-slate-950/60 p-3 font-mono text-xs leading-5 text-violet-200">
+                          {JSON.stringify(
+                            endpoint.expectedResponseSchema,
+                            null,
+                            2,
+                          )}
+                        </pre>
+                      </div>
+                    )}
 
                   {/* BUG INFORMATION */}
 
                   <div className="mt-5 sm:mt-6">
-
                     {selectedResult.bugDetected ? (
                       <div className="rounded-xl border border-red-400/20 bg-red-400/10 p-4 sm:p-5">
-
                         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-
                           <span className="rounded-full bg-red-400/20 px-3 py-1 text-[10px] font-bold text-red-400 sm:text-xs">
                             BUG DETECTED
                           </span>
@@ -2246,7 +2524,6 @@ export default function ProjectPage() {
                               }
                             </span>
                           )}
-
                         </div>
 
                         {selectedResult.bugMessage && (
@@ -2256,13 +2533,10 @@ export default function ProjectPage() {
                             }
                           </p>
                         )}
-
                       </div>
                     ) : (
                       <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-4 sm:p-5">
-
                         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
-
                           <span className="w-fit rounded-full bg-emerald-400/20 px-3 py-1 text-[10px] font-bold text-emerald-400 sm:text-xs">
                             NO BUG DETECTED
                           </span>
@@ -2272,26 +2546,20 @@ export default function ProjectPage() {
                             the configured
                             validation rules.
                           </span>
-
                         </div>
-
                       </div>
                     )}
-
                   </div>
 
                   {/* TEST INFORMATION */}
 
                   <div className="mt-5 rounded-xl border border-white/10 bg-slate-950/60 p-4 sm:mt-6 sm:p-5">
-
                     <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-400 sm:text-sm">
                       Test Information
                     </h3>
 
                     <div className="grid gap-4 sm:grid-cols-2 sm:gap-5">
-
                       <div className="min-w-0">
-
                         <p className="text-xs text-slate-500">
                           Result ID
                         </p>
@@ -2301,11 +2569,9 @@ export default function ProjectPage() {
                             selectedResult.id
                           }
                         </p>
-
                       </div>
 
                       <div className="min-w-0">
-
                         <p className="text-xs text-slate-500">
                           Tested At
                         </p>
@@ -2315,11 +2581,9 @@ export default function ProjectPage() {
                             selectedResult.createdAt,
                           ).toLocaleString()}
                         </p>
-
                       </div>
 
                       <div className="min-w-0">
-
                         <p className="text-xs text-slate-500">
                           Endpoint ID
                         </p>
@@ -2329,11 +2593,9 @@ export default function ProjectPage() {
                             selectedResult.endpointId
                           }
                         </p>
-
                       </div>
 
                       <div>
-
                         <p className="text-xs text-slate-500">
                           Overall Result
                         </p>
@@ -2349,18 +2611,14 @@ export default function ProjectPage() {
                             ? "PASS"
                             : "FAIL"}
                         </p>
-
                       </div>
-
                     </div>
-
                   </div>
 
                   {/* REQUEST ERROR */}
 
                   {selectedResult.error && (
                     <div className="mt-5 rounded-xl border border-red-400/20 bg-red-400/10 p-4 sm:mt-6 sm:p-5">
-
                       <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-red-400 sm:text-sm">
                         Request Error
                       </h3>
@@ -2370,16 +2628,13 @@ export default function ProjectPage() {
                           selectedResult.error
                         }
                       </pre>
-
                     </div>
                   )}
 
                   {/* RESPONSE BODY */}
 
                   <div className="mt-5 sm:mt-6">
-
                     <div className="mb-3">
-
                       <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400 sm:text-sm">
                         Response Body
                       </h3>
@@ -2388,11 +2643,9 @@ export default function ProjectPage() {
                         API response captured
                         during this test.
                       </p>
-
                     </div>
 
                     <div className="max-w-full overflow-hidden rounded-xl border border-white/10 bg-[#020617]">
-
                       <pre className="max-h-[300px] max-w-full overflow-auto whitespace-pre-wrap break-words p-4 font-mono text-xs leading-5 text-cyan-300 sm:max-h-[400px] sm:p-5 sm:text-sm sm:leading-6">
                         {selectedResult.responseBody !==
                           undefined &&
@@ -2405,17 +2658,13 @@ export default function ProjectPage() {
                             )
                           : "No response body available."}
                       </pre>
-
                     </div>
-
                   </div>
-
                 </div>
 
-                {/* DETAILS FOOTER */}
+                {/* FOOTER */}
 
                 <div className="flex shrink-0 border-t border-white/10 p-4 sm:justify-end sm:p-5">
-
                   <button
                     onClick={() =>
                       setSelectedResult(null)
@@ -2424,9 +2673,7 @@ export default function ProjectPage() {
                   >
                     Close
                   </button>
-
                 </div>
-
               </div>
             </div>
           );
@@ -2450,7 +2697,6 @@ function ResultItem({
 }) {
   return (
     <div className="min-w-0">
-
       <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 sm:text-xs">
         {label}
       </p>
@@ -2466,7 +2712,6 @@ function ResultItem({
       >
         {value}
       </p>
-
     </div>
   );
 }
@@ -2486,7 +2731,6 @@ function DetailCard({
 }) {
   return (
     <div className="min-w-0 rounded-xl border border-white/10 bg-slate-950/60 p-3 sm:p-4">
-
       <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 sm:text-xs">
         {label}
       </p>
@@ -2496,7 +2740,6 @@ function DetailCard({
       >
         {value}
       </p>
-
     </div>
   );
 }
@@ -2512,7 +2755,11 @@ function SummaryBox({
 }: {
   label: string;
   value: number;
-  color: "white" | "green" | "red" | "orange";
+  color:
+    | "white"
+    | "green"
+    | "red"
+    | "orange";
 }) {
   const styles = {
     white: {
@@ -2521,18 +2768,21 @@ function SummaryBox({
       label: "text-slate-500",
       value: "text-white",
     },
+
     green: {
       border: "border-emerald-400/20",
       bg: "bg-emerald-400/10",
       label: "text-emerald-400",
       value: "text-emerald-400",
     },
+
     red: {
       border: "border-red-400/20",
       bg: "bg-red-400/10",
       label: "text-red-400",
       value: "text-red-400",
     },
+
     orange: {
       border: "border-orange-400/20",
       bg: "bg-orange-400/10",
@@ -2541,7 +2791,8 @@ function SummaryBox({
     },
   };
 
-  const style = styles[color];
+  const style =
+    styles[color];
 
   return (
     <div
@@ -2575,7 +2826,6 @@ function MobileHistoryItem({
 }) {
   return (
     <div className="min-w-0">
-
       <p className="text-[10px] uppercase tracking-wider text-slate-600">
         {label}
       </p>
@@ -2583,7 +2833,6 @@ function MobileHistoryItem({
       <p className="mt-1 break-words text-xs font-semibold text-slate-300">
         {value}
       </p>
-
     </div>
   );
 }
