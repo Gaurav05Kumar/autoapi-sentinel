@@ -11,18 +11,31 @@ app = FastAPI(title="AutoAPI Sentinel AI Service")
 # ============================================================
 
 class AnalyzeRequest(BaseModel):
+
+    # --------------------------------------------------------
     # Request information
+    # --------------------------------------------------------
+
     method: str | None = None
     url: str | None = None
 
+    # --------------------------------------------------------
     # Response information
+    # --------------------------------------------------------
+
     statusCode: int | None = None
     responseTime: int
     responseBody: Any = None
 
+    # --------------------------------------------------------
     # Validation rules
+    # --------------------------------------------------------
+
     expectedStatus: int | None = None
     maxResponseTime: int | None = None
+
+    # Expected response structure
+    expectedResponseSchema: dict | None = None
 
 
 # ============================================================
@@ -31,6 +44,7 @@ class AnalyzeRequest(BaseModel):
 
 @app.get("/health")
 def health():
+
     return {
         "status": "ok",
         "service": "ai-service"
@@ -52,6 +66,8 @@ def analyze(request: AnalyzeRequest):
     bugType = None
     messages = []
 
+    response_body = request.responseBody
+
     # ========================================================
     # 1. STATUS CODE VALIDATION
     # ========================================================
@@ -60,6 +76,7 @@ def analyze(request: AnalyzeRequest):
         request.expectedStatus is not None
         and request.statusCode != request.expectedStatus
     ):
+
         bugDetected = True
 
         bugType = "STATUS_CODE"
@@ -77,6 +94,7 @@ def analyze(request: AnalyzeRequest):
         request.statusCode is not None
         and request.statusCode >= 400
     ):
+
         bugDetected = True
 
         # Don't overwrite a more specific STATUS_CODE bug
@@ -96,6 +114,7 @@ def analyze(request: AnalyzeRequest):
         request.maxResponseTime is not None
         and request.responseTime > request.maxResponseTime
     ):
+
         bugDetected = True
 
         if bugType is None:
@@ -110,8 +129,6 @@ def analyze(request: AnalyzeRequest):
     # ========================================================
     # 4. EMPTY RESPONSE DETECTION
     # ========================================================
-
-    response_body = request.responseBody
 
     is_empty_response = (
         response_body is None
@@ -135,13 +152,6 @@ def analyze(request: AnalyzeRequest):
     # 5. INVALID RESPONSE DETECTION
     # ========================================================
 
-    # If the API returns a primitive value instead of a
-    # structured JSON object/array, mark it as informational
-    # only when the response is otherwise unexpected.
-    #
-    # We don't automatically mark every string/number as a bug
-    # because some APIs legitimately return primitive values.
-
     if (
         response_body is not None
         and not isinstance(
@@ -149,6 +159,7 @@ def analyze(request: AnalyzeRequest):
             (dict, list, str, int, float, bool)
         )
     ):
+
         bugDetected = True
 
         if bugType is None:
@@ -159,29 +170,165 @@ def analyze(request: AnalyzeRequest):
         )
 
     # ========================================================
+    # 6. RESPONSE SCHEMA VALIDATION
+    # ========================================================
+
+    expected_schema = request.expectedResponseSchema
+
+    # Schema validation only makes sense when:
+    # 1. A schema was configured
+    # 2. API returned a JSON object
+    if (
+        expected_schema is not None
+        and isinstance(response_body, dict)
+    ):
+
+        # ----------------------------------------------------
+        # Check every expected field
+        # ----------------------------------------------------
+
+        for field, expected_value in expected_schema.items():
+
+            # =================================================
+            # 6.1 MISSING FIELD
+            # =================================================
+
+            if field not in response_body:
+
+                bugDetected = True
+
+                if bugType is None:
+                    bugType = "MISSING_FIELD"
+
+                messages.append(
+                    f"Expected field '{field}' "
+                    f"is missing from response"
+                )
+
+                # Continue with next field
+                continue
+
+            # ------------------------------------------------
+            # Field exists
+            # ------------------------------------------------
+
+            actual_value = response_body[field]
+
+            # =================================================
+            # 6.2 STRING TYPE VALIDATION
+            # =================================================
+
+            if (
+                isinstance(expected_value, str)
+                and not isinstance(actual_value, str)
+            ):
+
+                bugDetected = True
+
+                if bugType is None:
+                    bugType = "SCHEMA_MISMATCH"
+
+                messages.append(
+                    f"Field '{field}' expected type string "
+                    f"but received "
+                    f"{type(actual_value).__name__}"
+                )
+
+            # =================================================
+            # 6.3 INTEGER TYPE VALIDATION
+            # =================================================
+
+            elif (
+                isinstance(expected_value, int)
+                and not isinstance(expected_value, bool)
+                and not isinstance(actual_value, int)
+            ):
+
+                bugDetected = True
+
+                if bugType is None:
+                    bugType = "SCHEMA_MISMATCH"
+
+                messages.append(
+                    f"Field '{field}' expected type integer "
+                    f"but received "
+                    f"{type(actual_value).__name__}"
+                )
+
+            # =================================================
+            # 6.4 BOOLEAN TYPE VALIDATION
+            # =================================================
+
+            elif (
+                isinstance(expected_value, bool)
+                and not isinstance(actual_value, bool)
+            ):
+
+                bugDetected = True
+
+                if bugType is None:
+                    bugType = "SCHEMA_MISMATCH"
+
+                messages.append(
+                    f"Field '{field}' expected type boolean "
+                    f"but received "
+                    f"{type(actual_value).__name__}"
+                )
+
+            # =================================================
+            # 6.5 FLOAT / NUMBER TYPE VALIDATION
+            # =================================================
+
+            elif (
+                isinstance(expected_value, float)
+                and not isinstance(actual_value, (int, float))
+            ):
+
+                bugDetected = True
+
+                if bugType is None:
+                    bugType = "SCHEMA_MISMATCH"
+
+                messages.append(
+                    f"Field '{field}' expected type number "
+                    f"but received "
+                    f"{type(actual_value).__name__}"
+                )
+
+    # ========================================================
     # FINAL MESSAGE
     # ========================================================
 
     message = ". ".join(messages)
 
-    # If no bug was detected, return a clean analysis.
+    # If no bug was detected
     if not bugDetected:
-        message = "API response passed all configured validations"
+
+        message = (
+            "API response passed all configured validations"
+        )
 
     # ========================================================
-    # FINAL AI ANALYSIS
+    # FINAL AI ANALYSIS RESPONSE
     # ========================================================
 
     return {
+
         "bugDetected": bugDetected,
+
         "bugType": bugType,
+
         "message": message,
 
         # Useful for debugging and future AI expansion
         "analysis": {
+
             "method": request.method,
+
             "url": request.url,
+
             "statusCode": request.statusCode,
+
             "responseTime": request.responseTime,
         }
     }

@@ -30,6 +30,7 @@ export class EndpointsService {
     body?: Prisma.InputJsonValue,
     expectedStatus?: number,
     maxResponseTime?: number,
+    expectedResponseSchema?: Prisma.InputJsonValue,
   ) {
     // ----------------------------------------------------------
     // Check whether the project belongs to the logged-in user
@@ -62,6 +63,7 @@ export class EndpointsService {
         body,
         expectedStatus,
         maxResponseTime,
+        expectedResponseSchema,
         projectId,
       },
     });
@@ -254,6 +256,9 @@ export class EndpointsService {
 
                 maxResponseTime:
                   endpoint.maxResponseTime,
+
+                expectedResponseSchema:
+  endpoint.expectedResponseSchema,
               },
             ),
           );
