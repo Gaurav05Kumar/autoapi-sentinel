@@ -1,5 +1,6 @@
 "use client";
 
+import { Eye, EyeOff } from "lucide-react";
 import {
   FormEvent,
   useState,
@@ -26,6 +27,10 @@ export default function Home() {
     useState("");
 
   const [loading, setLoading] =
+    useState(false);
+
+  // Password show/hide state
+  const [showPassword, setShowPassword] =
     useState(false);
 
   // =========================
@@ -118,6 +123,9 @@ export default function Home() {
         // need to type it again
         setPassword("");
 
+        // Hide password after registration
+        setShowPassword(false);
+
         return;
       }
 
@@ -185,6 +193,10 @@ export default function Home() {
     setMode(newMode);
     setMessage("");
     setPassword("");
+
+    // Always hide password when
+    // switching between Login/Register
+    setShowPassword(false);
   }
 
   return (
@@ -489,21 +501,62 @@ export default function Home() {
                   Password
                 </label>
 
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) =>
-                    setPassword(e.target.value)
-                  }
-                  placeholder="••••••••"
-                  autoComplete={
-                    mode === "login"
-                      ? "current-password"
-                      : "new-password"
-                  }
-                  disabled={loading}
-                  className="w-full rounded-xl border border-white/10 bg-slate-950/35 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400/50 focus:ring-2 focus:ring-cyan-400/10 disabled:opacity-60"
-                />
+                <div className="relative">
+
+                  <input
+                    type={
+                      showPassword
+                        ? "text"
+                        : "password"
+                    }
+                    value={password}
+                    onChange={(e) =>
+                      setPassword(
+                        e.target.value,
+                      )
+                    }
+                    placeholder="••••••••"
+                    autoComplete={
+                      mode === "login"
+                        ? "current-password"
+                        : "new-password"
+                    }
+                    disabled={loading}
+                    className="w-full rounded-xl border border-white/10 bg-slate-950/35 px-4 py-3 pr-12 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400/50 focus:ring-2 focus:ring-cyan-400/10 disabled:opacity-60"
+                  />
+
+                  {/* SHOW / HIDE PASSWORD */}
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowPassword(
+                        (previous) =>
+                          !previous,
+                      )
+                    }
+                    disabled={loading}
+                    aria-label={
+                      showPassword
+                        ? "Hide password"
+                        : "Show password"
+                    }
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {showPassword ? (
+                      <EyeOff
+                        size={19}
+                        strokeWidth={2}
+                      />
+                    ) : (
+                      <Eye
+                        size={19}
+                        strokeWidth={2}
+                      />
+                    )}
+                  </button>
+
+                </div>
               </div>
 
               {/* ERROR / SUCCESS */}
