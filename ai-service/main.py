@@ -12,29 +12,17 @@ app = FastAPI(title="AutoAPI Sentinel AI Service")
 
 class AnalyzeRequest(BaseModel):
 
-    # --------------------------------------------------------
-    # Request information
-    # --------------------------------------------------------
-
     method: str | None = None
     url: str | None = None
 
-    # --------------------------------------------------------
-    # Response information
-    # --------------------------------------------------------
-
     statusCode: int | None = None
     responseTime: int
-    responseBody: Any = None
 
-    # --------------------------------------------------------
-    # Validation rules
-    # --------------------------------------------------------
+    responseBody: Any = None
 
     expectedStatus: int | None = None
     maxResponseTime: int | None = None
 
-    # Expected response structure
     expectedResponseSchema: dict | None = None
 
 
@@ -47,8 +35,314 @@ def health():
 
     return {
         "status": "ok",
-        "service": "ai-service"
+        "service": "ai-service",
     }
+
+
+# ============================================================
+# TYPE NAME
+# ============================================================
+
+def get_type_name(value: Any) -> str:
+
+    if value is None:
+        return "null"
+
+    if isinstance(value, bool):
+        return "boolean"
+
+    if isinstance(value, int):
+        return "integer"
+
+    if isinstance(value, float):
+        return "number"
+
+    if isinstance(value, str):
+        return "string"
+
+    if isinstance(value, list):
+        return "array"
+
+    if isinstance(value, dict):
+        return "object"
+
+    return type(value).__name__
+
+
+# ============================================================
+# EXPECTED TYPE VALIDATION
+# ============================================================
+
+def is_expected_type(
+    actual_value: Any,
+    expected_value: Any,
+) -> bool:
+
+    # --------------------------------------------------------
+    # Schema type is provided as a string
+    #
+    # Example:
+    # "id": "integer"
+    # "name": "string"
+    # "active": "boolean"
+    # --------------------------------------------------------
+
+    if isinstance(expected_value, str):
+
+        expected_type = expected_value.lower().strip()
+
+        # STRING
+        if expected_type == "string":
+            return isinstance(actual_value, str)
+
+        # INTEGER
+        if expected_type == "integer":
+            return (
+                isinstance(actual_value, int)
+                and not isinstance(actual_value, bool)
+            )
+
+        # NUMBER
+        if expected_type == "number":
+            return (
+                isinstance(actual_value, (int, float))
+                and not isinstance(actual_value, bool)
+            )
+
+        # FLOAT
+        if expected_type == "float":
+            return (
+                isinstance(actual_value, float)
+                and not isinstance(actual_value, bool)
+            )
+
+        # BOOLEAN
+        if expected_type == "boolean":
+            return isinstance(actual_value, bool)
+
+        # OBJECT
+        if expected_type == "object":
+            return isinstance(actual_value, dict)
+
+        # ARRAY
+        if expected_type == "array":
+            return isinstance(actual_value, list)
+
+        # NULL
+        if expected_type == "null":
+            return actual_value is None
+
+        # Unknown schema type
+        return False
+
+    # --------------------------------------------------------
+    # Nested object schema
+    # --------------------------------------------------------
+
+    if isinstance(expected_value, dict):
+
+        return isinstance(actual_value, dict)
+
+    # --------------------------------------------------------
+    # Array schema
+    # --------------------------------------------------------
+
+    if isinstance(expected_value, list):
+
+        return isinstance(actual_value, list)
+
+    # --------------------------------------------------------
+    # Direct boolean schema
+    # --------------------------------------------------------
+
+    if isinstance(expected_value, bool):
+
+        return isinstance(actual_value, bool)
+
+    # --------------------------------------------------------
+    # Direct integer schema
+    # --------------------------------------------------------
+
+    if isinstance(expected_value, int):
+
+        return (
+            isinstance(actual_value, int)
+            and not isinstance(actual_value, bool)
+        )
+
+    # --------------------------------------------------------
+    # Direct float schema
+    # --------------------------------------------------------
+
+    if isinstance(expected_value, float):
+
+        return (
+            isinstance(actual_value, (int, float))
+            and not isinstance(actual_value, bool)
+        )
+
+    # --------------------------------------------------------
+    # Null
+    # --------------------------------------------------------
+
+    if expected_value is None:
+
+        return actual_value is None
+
+    return False
+
+
+# ============================================================
+# RECURSIVE SCHEMA VALIDATOR
+# ============================================================
+
+def validate_schema(
+    expected_schema: dict,
+    actual_response: dict,
+    path: str = "",
+) -> list[dict]:
+
+    errors = []
+
+    # ========================================================
+    # CHECK EACH EXPECTED FIELD
+    # ========================================================
+
+    for field, expected_value in expected_schema.items():
+
+        field_path = (
+            f"{path}.{field}"
+            if path
+            else field
+        )
+
+        # ====================================================
+        # MISSING FIELD
+        # ====================================================
+
+        if field not in actual_response:
+
+            errors.append({
+                "type": "MISSING_FIELD",
+                "message": (
+                    f"Required field '{field_path}' "
+                    f"is missing from response"
+                ),
+            })
+
+            continue
+
+        actual_value = actual_response[field]
+
+        # ====================================================
+        # TYPE MISMATCH
+        # ====================================================
+
+        if not is_expected_type(
+            actual_value,
+            expected_value,
+        ):
+
+            errors.append({
+                "type": "SCHEMA_MISMATCH",
+                "message": (
+                    f"Field '{field_path}' expected type "
+                    f"{expected_value} "
+                    f"but received "
+                    f"{get_type_name(actual_value)}"
+                ),
+            })
+
+            continue
+
+        # ====================================================
+        # NESTED OBJECT
+        # ====================================================
+
+        if (
+            isinstance(expected_value, dict)
+            and isinstance(actual_value, dict)
+        ):
+
+            nested_errors = validate_schema(
+                expected_value,
+                actual_value,
+                field_path,
+            )
+
+            errors.extend(nested_errors)
+
+        # ====================================================
+        # ARRAY
+        # ====================================================
+
+        elif (
+            isinstance(expected_value, list)
+            and isinstance(actual_value, list)
+        ):
+
+            # Empty array means only check array type
+            if len(expected_value) == 0:
+                continue
+
+            expected_item_schema = expected_value[0]
+
+            for index, actual_item in enumerate(
+                actual_value
+            ):
+
+                item_path = (
+                    f"{field_path}[{index}]"
+                )
+
+                # --------------------------------------------
+                # ARRAY ITEM TYPE
+                # --------------------------------------------
+
+                if not is_expected_type(
+                    actual_item,
+                    expected_item_schema,
+                ):
+
+                    errors.append({
+                        "type": "SCHEMA_MISMATCH",
+                        "message": (
+                            f"Field '{item_path}' "
+                            f"expected type "
+                            f"{expected_item_schema} "
+                            f"but received "
+                            f"{get_type_name(actual_item)}"
+                        ),
+                    })
+
+                    continue
+
+                # --------------------------------------------
+                # ARRAY OF OBJECTS
+                # --------------------------------------------
+
+                if (
+                    isinstance(
+                        expected_item_schema,
+                        dict,
+                    )
+                    and isinstance(
+                        actual_item,
+                        dict,
+                    )
+                ):
+
+                    nested_errors = validate_schema(
+                        expected_item_schema,
+                        actual_item,
+                        item_path,
+                    )
+
+                    errors.extend(
+                        nested_errors
+                    )
+
+    return errors
 
 
 # ============================================================
@@ -58,18 +352,16 @@ def health():
 @app.post("/analyze")
 def analyze(request: AnalyzeRequest):
 
-    # --------------------------------------------------------
-    # Default analysis values
-    # --------------------------------------------------------
-
     bugDetected = False
+
     bugType = None
+
     messages = []
 
     response_body = request.responseBody
 
     # ========================================================
-    # 1. STATUS CODE VALIDATION
+    # 1. STATUS CODE
     # ========================================================
 
     if (
@@ -87,7 +379,7 @@ def analyze(request: AnalyzeRequest):
         )
 
     # ========================================================
-    # 2. HTTP ERROR DETECTION
+    # 2. HTTP ERROR
     # ========================================================
 
     if (
@@ -97,7 +389,6 @@ def analyze(request: AnalyzeRequest):
 
         bugDetected = True
 
-        # Don't overwrite a more specific STATUS_CODE bug
         if bugType is None:
             bugType = "HTTP_ERROR"
 
@@ -107,7 +398,7 @@ def analyze(request: AnalyzeRequest):
         )
 
     # ========================================================
-    # 3. RESPONSE TIME VALIDATION
+    # 3. RESPONSE TIME
     # ========================================================
 
     if (
@@ -127,7 +418,7 @@ def analyze(request: AnalyzeRequest):
         )
 
     # ========================================================
-    # 4. EMPTY RESPONSE DETECTION
+    # 4. EMPTY RESPONSE
     # ========================================================
 
     is_empty_response = (
@@ -149,14 +440,21 @@ def analyze(request: AnalyzeRequest):
         )
 
     # ========================================================
-    # 5. INVALID RESPONSE DETECTION
+    # 5. INVALID RESPONSE
     # ========================================================
 
     if (
         response_body is not None
         and not isinstance(
             response_body,
-            (dict, list, str, int, float, bool)
+            (
+                dict,
+                list,
+                str,
+                int,
+                float,
+                bool,
+            ),
         )
     ):
 
@@ -170,146 +468,63 @@ def analyze(request: AnalyzeRequest):
         )
 
     # ========================================================
-    # 6. RESPONSE SCHEMA VALIDATION
+    # 6. RESPONSE SCHEMA
     # ========================================================
 
     expected_schema = request.expectedResponseSchema
 
-    # Schema validation only makes sense when:
-    # 1. A schema was configured
-    # 2. API returned a JSON object
-    if (
-        expected_schema is not None
-        and isinstance(response_body, dict)
-    ):
+    if expected_schema is not None:
 
         # ----------------------------------------------------
-        # Check every expected field
+        # Schema exists but response is not an object
         # ----------------------------------------------------
 
-        for field, expected_value in expected_schema.items():
+        if not isinstance(response_body, dict):
 
-            # =================================================
-            # 6.1 MISSING FIELD
-            # =================================================
+            bugDetected = True
 
-            if field not in response_body:
+            if bugType is None:
+                bugType = "SCHEMA_MISMATCH"
 
-                bugDetected = True
+            messages.append(
+                "Expected response to be an object "
+                "for schema validation"
+            )
 
-                if bugType is None:
-                    bugType = "MISSING_FIELD"
+        else:
 
-                messages.append(
-                    f"Expected field '{field}' "
-                    f"is missing from response"
-                )
+            schema_errors = validate_schema(
+                expected_schema,
+                response_body,
+            )
 
-                # Continue with next field
-                continue
-
-            # ------------------------------------------------
-            # Field exists
-            # ------------------------------------------------
-
-            actual_value = response_body[field]
-
-            # =================================================
-            # 6.2 STRING TYPE VALIDATION
-            # =================================================
-
-            if (
-                isinstance(expected_value, str)
-                and not isinstance(actual_value, str)
-            ):
+            for error in schema_errors:
 
                 bugDetected = True
 
                 if bugType is None:
-                    bugType = "SCHEMA_MISMATCH"
+                    bugType = error["type"]
 
                 messages.append(
-                    f"Field '{field}' expected type string "
-                    f"but received "
-                    f"{type(actual_value).__name__}"
-                )
-
-            # =================================================
-            # 6.3 INTEGER TYPE VALIDATION
-            # =================================================
-
-            elif (
-                isinstance(expected_value, int)
-                and not isinstance(expected_value, bool)
-                and not isinstance(actual_value, int)
-            ):
-
-                bugDetected = True
-
-                if bugType is None:
-                    bugType = "SCHEMA_MISMATCH"
-
-                messages.append(
-                    f"Field '{field}' expected type integer "
-                    f"but received "
-                    f"{type(actual_value).__name__}"
-                )
-
-            # =================================================
-            # 6.4 BOOLEAN TYPE VALIDATION
-            # =================================================
-
-            elif (
-                isinstance(expected_value, bool)
-                and not isinstance(actual_value, bool)
-            ):
-
-                bugDetected = True
-
-                if bugType is None:
-                    bugType = "SCHEMA_MISMATCH"
-
-                messages.append(
-                    f"Field '{field}' expected type boolean "
-                    f"but received "
-                    f"{type(actual_value).__name__}"
-                )
-
-            # =================================================
-            # 6.5 FLOAT / NUMBER TYPE VALIDATION
-            # =================================================
-
-            elif (
-                isinstance(expected_value, float)
-                and not isinstance(actual_value, (int, float))
-            ):
-
-                bugDetected = True
-
-                if bugType is None:
-                    bugType = "SCHEMA_MISMATCH"
-
-                messages.append(
-                    f"Field '{field}' expected type number "
-                    f"but received "
-                    f"{type(actual_value).__name__}"
+                    error["message"]
                 )
 
     # ========================================================
     # FINAL MESSAGE
     # ========================================================
 
-    message = ". ".join(messages)
-
-    # If no bug was detected
     if not bugDetected:
 
         message = (
             "API response passed all configured validations"
         )
 
+    else:
+
+        message = ". ".join(messages)
+
     # ========================================================
-    # FINAL AI ANALYSIS RESPONSE
+    # FINAL RESPONSE
     # ========================================================
 
     return {
@@ -320,7 +535,6 @@ def analyze(request: AnalyzeRequest):
 
         "message": message,
 
-        # Useful for debugging and future AI expansion
         "analysis": {
 
             "method": request.method,
@@ -330,5 +544,9 @@ def analyze(request: AnalyzeRequest):
             "statusCode": request.statusCode,
 
             "responseTime": request.responseTime,
-        }
+
+            "expectedResponseSchema":
+                request.expectedResponseSchema,
+
+        },
     }
