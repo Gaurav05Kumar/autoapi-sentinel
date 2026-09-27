@@ -11,6 +11,9 @@ export class ProjectsService {
     private readonly prisma: PrismaService,
   ) {}
 
+  // =========================
+  // CREATE PROJECT
+  // =========================
   async create(
     name: string,
     description: string | undefined,
@@ -25,6 +28,9 @@ export class ProjectsService {
     });
   }
 
+  // =========================
+  // GET ALL PROJECTS
+  // =========================
   async findAll(userId: string) {
     return this.prisma.project.findMany({
       where: {
@@ -33,36 +39,85 @@ export class ProjectsService {
     });
   }
 
+  // =========================
+  // GET SINGLE PROJECT
+  // =========================
   async findOne(
     id: string,
     userId: string,
   ) {
-    const project = await this.prisma.project.findFirst({
-      where: {
-        id,
-        userId,
-      },
-    });
+    console.log(
+      '========== FIND PROJECT DEBUG ==========',
+    );
 
+    console.log(
+      'Requested Project ID:',
+      id,
+    );
+
+    console.log(
+      'Requested User ID:',
+      userId,
+    );
+
+    // Find project only by ID first
+    const project =
+      await this.prisma.project.findUnique({
+        where: {
+          id,
+        },
+      });
+
+    console.log(
+      'Project from DB:',
+      project,
+    );
+
+    // Project does not exist
     if (!project) {
       throw new NotFoundException(
-        'Project not found',
+        'Project does not exist in database',
+      );
+    }
+
+    // Check project ownership
+    if (project.userId !== userId) {
+      console.log(
+        'USER ID MISMATCH',
+      );
+
+      console.log(
+        'Project userId:',
+        project.userId,
+      );
+
+      console.log(
+        'Request userId:',
+        userId,
+      );
+
+      throw new NotFoundException(
+        'Project does not belong to this user',
       );
     }
 
     return project;
   }
 
+  // =========================
+  // DELETE PROJECT
+  // =========================
   async remove(
     id: string,
     userId: string,
   ) {
-    const project = await this.prisma.project.findFirst({
-      where: {
-        id,
-        userId,
-      },
-    });
+    const project =
+      await this.prisma.project.findFirst({
+        where: {
+          id,
+          userId,
+        },
+      });
 
     if (!project) {
       throw new NotFoundException(

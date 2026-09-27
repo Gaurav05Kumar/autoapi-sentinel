@@ -39,6 +39,8 @@ type Analytics = {
     bugTypes: Record<string, number>;
 };
 
+const API_BASE_URL = "http://localhost:5000";
+
 export default function Dashboard() {
     const [projects, setProjects] = useState<Project[]>([]);
     const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
@@ -56,232 +58,324 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
-    // =============================================================
+    // =========================================================
+    // CREATE PROJECT MODAL
+    // =========================================================
+
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [projectName, setProjectName] = useState("");
+    const [projectDescription, setProjectDescription] = useState("");
+    const [creatingProject, setCreatingProject] = useState(false);
+    const [createProjectError, setCreateProjectError] = useState("");
+
+    // =========================================================
     // LOAD DASHBOARD DATA
-    // =============================================================
+    // =========================================================
 
-    useEffect(() => {
-        async function loadDashboard() {
-            try {
-                setLoading(true);
-                setError("");
+    async function loadDashboard() {
+        try {
+            setLoading(true);
+            setError("");
 
-                // -------------------------------------------------
-                // AUTH TOKEN
-                // -------------------------------------------------
+            const token = localStorage.getItem("accessToken");
 
-                const token =
-                    localStorage.getItem("accessToken");
+            if (!token) {
+                window.location.href = "/";
+                return;
+            }
 
-                if (!token) {
-                    window.location.href = "/";
-                    return;
+            const authHeaders = {
+                Authorization: `Bearer ${token}`,
+            };
+
+            // -----------------------------------------------------
+            // GET PROJECTS
+            // -----------------------------------------------------
+
+            const projectsResponse = await fetch(
+                `${API_BASE_URL}/projects`,
+                {
+                    method: "GET",
+                    headers: authHeaders,
                 }
+            );
 
-                const authHeaders = {
-                    Authorization: `Bearer ${token}`,
-                };
+            const projectsData = await projectsResponse.json();
 
-                // -------------------------------------------------
-                // GET PROJECTS
-                // -------------------------------------------------
+            if (!projectsResponse.ok) {
+                throw new Error(
+                    projectsData.message ||
+                        "Failed to load projects"
+                );
+            }
 
-                const projectsResponse = await fetch(
-                    "http://localhost:5000/projects",
+            const projectList = projectsData as Project[];
+
+            setProjects(projectList);
+
+            // -----------------------------------------------------
+            // STORAGE
+            // -----------------------------------------------------
+
+            const allEndpoints: Endpoint[] = [];
+            const allResults: TestResult[] = [];
+
+            let totalTests = 0;
+            let passedTests = 0;
+            let failedTests = 0;
+            let bugsDetected = 0;
+
+            const bugTypes: Record<string, number> = {};
+
+            // -----------------------------------------------------
+            // PROCESS PROJECTS
+            // -----------------------------------------------------
+
+            for (const project of projectList) {
+                // =================================================
+                // GET ENDPOINTS
+                // =================================================
+
+                const endpointResponse = await fetch(
+                    `${API_BASE_URL}/projects/${project.id}/endpoints`,
                     {
                         method: "GET",
                         headers: authHeaders,
                     }
                 );
 
-                const projectsData =
-                    await projectsResponse.json();
+                let projectEndpoints: Endpoint[] = [];
 
-                if (!projectsResponse.ok) {
-                    throw new Error(
-                        projectsData.message ||
-                            "Failed to load projects"
+                if (endpointResponse.ok) {
+                    const endpointData =
+                        await endpointResponse.json();
+
+                    projectEndpoints =
+                        endpointData as Endpoint[];
+
+                    allEndpoints.push(
+                        ...projectEndpoints.map(
+                            (endpoint) => ({
+                                ...endpoint,
+                                projectId: project.id,
+                            })
+                        )
                     );
                 }
 
-                const projectList =
-                    projectsData as Project[];
+                // =================================================
+                // GET RESULTS
+                // =================================================
 
-                setProjects(projectList);
-
-                // -------------------------------------------------
-                // STORAGE
-                // -------------------------------------------------
-
-                const allEndpoints: Endpoint[] = [];
-                const allResults: TestResult[] = [];
-
-                let totalTests = 0;
-                let passedTests = 0;
-                let failedTests = 0;
-                let bugsDetected = 0;
-
-                const bugTypes: Record<string, number> = {};
-
-                // -------------------------------------------------
-                // PROCESS EACH PROJECT
-                // -------------------------------------------------
-
-                for (const project of projectList) {
-                    // =============================================
-                    // GET PROJECT ENDPOINTS
-                    // =============================================
-
-                    const endpointResponse =
-                        await fetch(
-                            `http://localhost:5000/projects/${project.id}/endpoints`,
-                            {
-                                method: "GET",
-                                headers: authHeaders,
-                            }
-                        );
-
-                    let projectEndpoints: Endpoint[] = [];
-
-                    if (endpointResponse.ok) {
-                        const endpointData =
-                            await endpointResponse.json();
-
-                        projectEndpoints =
-                            endpointData as Endpoint[];
-
-                        allEndpoints.push(
-                            ...projectEndpoints.map(
-                                (endpoint) => ({
-                                    ...endpoint,
-                                    projectId:
-                                        project.id,
-                                })
-                            )
-                        );
-                    }
-
-                    // =============================================
-                    // GET RESULTS FOR THIS PROJECT ONLY
-                    // =============================================
-
-                    for (
-                        const endpoint of projectEndpoints
-                    ) {
-                        const resultResponse =
-                            await fetch(
-                                `http://localhost:5000/projects/${project.id}/endpoints/${endpoint.id}/results`,
-                                {
-                                    method: "GET",
-                                    headers: authHeaders,
-                                }
-                            );
-
-                        if (!resultResponse.ok) {
-                            continue;
+                for (const endpoint of projectEndpoints) {
+                    const resultResponse = await fetch(
+                        `${API_BASE_URL}/projects/${project.id}/endpoints/${endpoint.id}/results`,
+                        {
+                            method: "GET",
+                            headers: authHeaders,
                         }
+                    );
 
-                        const resultData =
-                            await resultResponse.json();
-
-                        allResults.push(
-                            ...(resultData as TestResult[])
-                        );
+                    if (!resultResponse.ok) {
+                        continue;
                     }
 
-                    // =============================================
-                    // ANALYTICS
-                    // =============================================
+                    const resultData =
+                        await resultResponse.json();
 
-                    const analyticsResponse =
-                        await fetch(
-                            `http://localhost:5000/projects/${project.id}/endpoints/analytics`,
-                            {
-                                method: "GET",
-                                headers: authHeaders,
-                            }
-                        );
-
-                    if (analyticsResponse.ok) {
-                        const projectAnalytics =
-                            (await analyticsResponse.json()) as Analytics;
-
-                        totalTests +=
-                            projectAnalytics.totalTests ||
-                            0;
-
-                        passedTests +=
-                            projectAnalytics.passedTests ||
-                            0;
-
-                        failedTests +=
-                            projectAnalytics.failedTests ||
-                            0;
-
-                        bugsDetected +=
-                            projectAnalytics.bugsDetected ||
-                            0;
-
-                        Object.entries(
-                            projectAnalytics.bugTypes ||
-                                {}
-                        ).forEach(
-                            ([bugType, count]) => {
-                                bugTypes[bugType] =
-                                    (bugTypes[bugType] || 0) +
-                                    Number(count);
-                            }
-                        );
-                    }
+                    allResults.push(
+                        ...(resultData as TestResult[])
+                    );
                 }
 
-                // -------------------------------------------------
-                // SUCCESS RATE
-                // -------------------------------------------------
+                // =================================================
+                // GET ANALYTICS
+                // =================================================
 
-                const successRate =
-                    totalTests > 0
-                        ? Number(
-                              (
-                                  (passedTests /
-                                      totalTests) *
-                                  100
-                              ).toFixed(1)
-                          )
-                        : 0;
-
-                // -------------------------------------------------
-                // SAVE DATA
-                // -------------------------------------------------
-
-                setEndpoints(allEndpoints);
-                setResults(allResults);
-
-                setAnalytics({
-                    totalTests,
-                    passedTests,
-                    failedTests,
-                    bugsDetected,
-                    successRate,
-                    bugTypes,
-                });
-            } catch (err) {
-                setError(
-                    err instanceof Error
-                        ? err.message
-                        : "Something went wrong"
+                const analyticsResponse = await fetch(
+                    `${API_BASE_URL}/projects/${project.id}/endpoints/analytics`,
+                    {
+                        method: "GET",
+                        headers: authHeaders,
+                    }
                 );
-            } finally {
-                setLoading(false);
-            }
-        }
 
+                if (analyticsResponse.ok) {
+                    const projectAnalytics =
+                        (await analyticsResponse.json()) as Analytics;
+
+                    totalTests +=
+                        projectAnalytics.totalTests || 0;
+
+                    passedTests +=
+                        projectAnalytics.passedTests || 0;
+
+                    failedTests +=
+                        projectAnalytics.failedTests || 0;
+
+                    bugsDetected +=
+                        projectAnalytics.bugsDetected || 0;
+
+                    Object.entries(
+                        projectAnalytics.bugTypes || {}
+                    ).forEach(([bugType, count]) => {
+                        bugTypes[bugType] =
+                            (bugTypes[bugType] || 0) +
+                            Number(count);
+                    });
+                }
+            }
+
+            // -----------------------------------------------------
+            // SUCCESS RATE
+            // -----------------------------------------------------
+
+            const successRate =
+                totalTests > 0
+                    ? Number(
+                          (
+                              (passedTests / totalTests) *
+                              100
+                          ).toFixed(1)
+                      )
+                    : 0;
+
+            // -----------------------------------------------------
+            // SAVE DATA
+            // -----------------------------------------------------
+
+            setEndpoints(allEndpoints);
+            setResults(allResults);
+
+            setAnalytics({
+                totalTests,
+                passedTests,
+                failedTests,
+                bugsDetected,
+                successRate,
+                bugTypes,
+            });
+        } catch (err) {
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : "Something went wrong"
+            );
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    // =========================================================
+    // INITIAL LOAD
+    // =========================================================
+
+    useEffect(() => {
         loadDashboard();
     }, []);
 
-    // =============================================================
+    // =========================================================
+    // OPEN CREATE PROJECT MODAL
+    // =========================================================
+
+    function openCreateModal() {
+        setProjectName("");
+        setProjectDescription("");
+        setCreateProjectError("");
+        setShowCreateModal(true);
+    }
+
+    // =========================================================
+    // CREATE PROJECT
+    // =========================================================
+
+    async function handleCreateProject() {
+        const trimmedName = projectName.trim();
+
+        if (!trimmedName) {
+            setCreateProjectError(
+                "Please enter a project name."
+            );
+            return;
+        }
+
+        try {
+            setCreatingProject(true);
+            setCreateProjectError("");
+
+            const token =
+                localStorage.getItem("accessToken");
+
+            if (!token) {
+                window.location.href = "/";
+                return;
+            }
+
+            const response = await fetch(
+                `${API_BASE_URL}/projects`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({
+                        name: trimmedName,
+                        description:
+                            projectDescription.trim() ||
+                            undefined,
+                    }),
+                }
+            );
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    data.message ||
+                        "Failed to create project"
+                );
+            }
+
+            // Clear form
+            setProjectName("");
+            setProjectDescription("");
+            setCreateProjectError("");
+
+            // Close modal
+            setShowCreateModal(false);
+
+            // Refresh dashboard
+            await loadDashboard();
+        } catch (err) {
+            setCreateProjectError(
+                err instanceof Error
+                    ? err.message
+                    : "Failed to create project"
+            );
+        } finally {
+            setCreatingProject(false);
+        }
+    }
+
+    // =========================================================
+    // CLOSE CREATE PROJECT MODAL
+    // =========================================================
+
+    function closeCreateModal() {
+        if (creatingProject) {
+            return;
+        }
+
+        setShowCreateModal(false);
+        setProjectName("");
+        setProjectDescription("");
+        setCreateProjectError("");
+    }
+
+    // =========================================================
     // RECENT RESULTS
-    // =============================================================
+    // =========================================================
 
     const recentResults = [...results]
         .sort(
@@ -291,9 +385,9 @@ export default function Dashboard() {
         )
         .slice(0, 5);
 
-    // =============================================================
+    // =========================================================
     // RENDER
-    // =============================================================
+    // =========================================================
 
     return (
         <main className="min-h-screen overflow-x-hidden bg-[#020617] px-3 py-5 text-white sm:px-5 sm:py-6 md:px-8 md:py-8">
@@ -363,6 +457,7 @@ export default function Dashboard() {
                         </span>
 
                     </div>
+
                 </header>
 
                 {/* =================================================
@@ -385,34 +480,45 @@ export default function Dashboard() {
                     ERROR
                 ================================================== */}
 
-                {error && (
+                {error && !loading && (
                     <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-5 shadow-[0_0_30px_rgba(239,68,68,0.06)]">
+
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+
                             <div className="min-w-0">
+
                                 <p className="font-semibold text-red-300">
                                     Unable to load dashboard
                                 </p>
+
                                 <p className="mt-1 break-words text-sm leading-6 text-red-400/80">
                                     {error}
                                 </p>
+
                             </div>
 
                             <button
-                                onClick={() => window.location.reload()}
+                                onClick={loadDashboard}
                                 className="inline-flex shrink-0 items-center justify-center rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-2.5 text-sm font-semibold text-red-300 transition hover:bg-red-500/20"
                             >
                                 ↻ Retry
                             </button>
+
                         </div>
+
                     </div>
                 )}
+
+                {/* =================================================
+                    MAIN DASHBOARD
+                ================================================== */}
 
                 {!loading && !error && (
                     <>
 
                         {/* =================================================
                             MAIN STATS
-                        ================================================= */}
+                        ================================================== */}
 
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
 
@@ -448,7 +554,7 @@ export default function Dashboard() {
 
                         {/* =================================================
                             SUMMARY
-                        ================================================= */}
+                        ================================================== */}
 
                         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 md:grid-cols-3">
 
@@ -474,7 +580,7 @@ export default function Dashboard() {
 
                         {/* =================================================
                             ANALYTICS
-                        ================================================= */}
+                        ================================================== */}
 
                         <GlassCard className="mt-6 overflow-hidden sm:mt-8">
 
@@ -488,7 +594,7 @@ export default function Dashboard() {
                                             Test Analytics
                                         </h2>
 
-                                        <p className="mt-1 max-w-xl text-xs leading-5 text-slate-500 sm:text-sm sm:leading-normal">
+                                        <p className="mt-1 max-w-xl text-xs leading-5 text-slate-500 sm:text-sm">
                                             API testing performance and
                                             detected bug statistics
                                         </p>
@@ -500,6 +606,7 @@ export default function Dashboard() {
                                     </span>
 
                                 </div>
+
                             </div>
 
                             <div className="p-4 sm:p-6">
@@ -542,8 +649,6 @@ export default function Dashboard() {
                                             </div>
 
                                         </div>
-
-                                        {/* PROGRESS */}
 
                                         <div className="mt-6 h-2 overflow-hidden rounded-full bg-slate-800">
 
@@ -642,19 +747,22 @@ export default function Dashboard() {
                                     </div>
 
                                 </div>
+
                             </div>
 
                         </GlassCard>
 
                         {/* =================================================
                             PROJECTS
-                        ================================================= */}
+                        ================================================== */}
 
                         <GlassCard className="mt-6 overflow-hidden sm:mt-8">
 
+                            {/* PROJECT HEADER */}
+
                             <div className="border-b border-white/10 px-4 py-4 sm:px-6 sm:py-5">
 
-                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 
                                     <div className="min-w-0">
 
@@ -668,15 +776,27 @@ export default function Dashboard() {
 
                                     </div>
 
-                                    <span className="w-fit shrink-0 rounded-full border border-blue-400/20 bg-blue-400/5 px-3 py-1 text-xs font-medium text-blue-400">
-                                        {projects.length}{" "}
-                                        {projects.length === 1
-                                            ? "Project"
-                                            : "Projects"}
-                                    </span>
+                                    {/* ADD NEW PROJECT */}
+
+                                    <button
+                                        type="button"
+                                        onClick={openCreateModal}
+                                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_0_20px_rgba(37,99,235,0.18)] transition hover:bg-blue-500 hover:shadow-[0_0_25px_rgba(37,99,235,0.3)] sm:w-auto"
+                                    >
+
+                                        <span className="text-lg leading-none">
+                                            +
+                                        </span>
+
+                                        Add New Project
+
+                                    </button>
 
                                 </div>
+
                             </div>
+
+                            {/* PROJECT CONTENT */}
 
                             <div className="p-4 sm:p-6">
 
@@ -697,9 +817,8 @@ export default function Dashboard() {
                                         </p>
 
                                         <button
-                                            onClick={() => {
-                                                window.location.href = "/projects/new";
-                                            }}
+                                            type="button"
+                                            onClick={openCreateModal}
                                             className="mt-5 inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_0_20px_rgba(37,99,235,0.18)] transition hover:bg-blue-500 hover:shadow-[0_0_25px_rgba(37,99,235,0.3)]"
                                         >
                                             + Create Project
@@ -742,10 +861,11 @@ export default function Dashboard() {
                                                     </div>
 
                                                     <button
-                                                        onClick={() =>
-                                                            (window.location.href =
-                                                                `/projects/${project.id}`)
-                                                        }
+                                                        type="button"
+                                                        onClick={() => {
+                                                            window.location.href =
+                                                                `/projects/${project.id}`;
+                                                        }}
                                                         className="mt-5 w-full rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_0_20px_rgba(37,99,235,0.18)] transition hover:bg-blue-500 hover:shadow-[0_0_25px_rgba(37,99,235,0.3)] sm:w-auto"
                                                     >
                                                         Open Project →
@@ -764,7 +884,7 @@ export default function Dashboard() {
 
                         {/* =================================================
                             RECENT TESTS
-                        ================================================= */}
+                        ================================================== */}
 
                         <GlassCard className="mt-6 overflow-hidden sm:mt-8">
 
@@ -815,6 +935,7 @@ export default function Dashboard() {
                                 </div>
                             ) : (
                                 <>
+
                                     {/* =================================================
                                         DESKTOP TABLE
                                     ================================================== */}
@@ -875,8 +996,6 @@ export default function Dashboard() {
                                                                 className="transition hover:bg-cyan-400/[0.025]"
                                                             >
 
-                                                                {/* ENDPOINT */}
-
                                                                 <td className="px-6 py-5">
 
                                                                     <div className="max-w-[320px]">
@@ -907,8 +1026,6 @@ export default function Dashboard() {
 
                                                                 </td>
 
-                                                                {/* STATUS */}
-
                                                                 <td className="px-6 py-5">
 
                                                                     {result.statusCode ? (
@@ -916,13 +1033,11 @@ export default function Dashboard() {
                                                                             className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-bold ${
                                                                                 result.statusCode >=
                                                                                     200 &&
-                                                                                result.statusCode <
-                                                                                    300
+                                                                                result.statusCode < 300
                                                                                     ? "border-emerald-400/20 bg-emerald-400/5 text-emerald-400"
                                                                                     : result.statusCode >=
                                                                                           300 &&
-                                                                                      result.statusCode <
-                                                                                          400
+                                                                                      result.statusCode < 400
                                                                                     ? "border-orange-400/20 bg-orange-400/5 text-orange-400"
                                                                                     : "border-red-400/20 bg-red-400/5 text-red-400"
                                                                             }`}
@@ -938,8 +1053,6 @@ export default function Dashboard() {
                                                                     )}
 
                                                                 </td>
-
-                                                                {/* RESPONSE TIME */}
 
                                                                 <td className="px-6 py-5">
 
@@ -968,8 +1081,6 @@ export default function Dashboard() {
 
                                                                 </td>
 
-                                                                {/* RESULT */}
-
                                                                 <td className="px-6 py-5">
 
                                                                     {result.success ? (
@@ -992,22 +1103,14 @@ export default function Dashboard() {
 
                                                                 </td>
 
-                                                                {/* BUG */}
-
                                                                 <td className="px-6 py-5">
 
                                                                     {result.bugDetected ? (
                                                                         <div className="flex flex-col gap-1.5">
 
                                                                             <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-orange-400/20 bg-orange-400/5 px-3 py-1.5 text-xs font-bold text-orange-400">
-
-                                                                                <span>
-                                                                                    ⚠
-                                                                                </span>
-
-                                                                                BUG
+                                                                                ⚠ BUG
                                                                                 DETECTED
-
                                                                             </span>
 
                                                                             {result.bugType && (
@@ -1067,8 +1170,6 @@ export default function Dashboard() {
                                                         className="rounded-2xl border border-white/10 bg-slate-950/70 p-4"
                                                     >
 
-                                                        {/* ENDPOINT */}
-
                                                         <div className="min-w-0">
 
                                                             <div className="flex items-start justify-between gap-3">
@@ -1099,20 +1200,16 @@ export default function Dashboard() {
 
                                                                 </div>
 
-                                                                {/* STATUS */}
-
                                                                 {result.statusCode ? (
                                                                     <span
                                                                         className={`shrink-0 rounded-lg border px-2.5 py-1 text-xs font-bold ${
                                                                             result.statusCode >=
                                                                                 200 &&
-                                                                            result.statusCode <
-                                                                                300
+                                                                            result.statusCode < 300
                                                                                 ? "border-emerald-400/20 bg-emerald-400/5 text-emerald-400"
                                                                                 : result.statusCode >=
                                                                                       300 &&
-                                                                                  result.statusCode <
-                                                                                      400
+                                                                                  result.statusCode < 400
                                                                                 ? "border-orange-400/20 bg-orange-400/5 text-orange-400"
                                                                                 : "border-red-400/20 bg-red-400/5 text-red-400"
                                                                         }`}
@@ -1131,11 +1228,7 @@ export default function Dashboard() {
 
                                                         </div>
 
-                                                        {/* DETAILS */}
-
                                                         <div className="mt-4 grid grid-cols-2 gap-3 border-t border-white/5 pt-4">
-
-                                                            {/* RESPONSE TIME */}
 
                                                             <div>
 
@@ -1168,8 +1261,6 @@ export default function Dashboard() {
 
                                                             </div>
 
-                                                            {/* RESULT */}
-
                                                             <div>
 
                                                                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">
@@ -1201,8 +1292,6 @@ export default function Dashboard() {
                                                             </div>
 
                                                         </div>
-
-                                                        {/* BUG DETECTION */}
 
                                                         <div className="mt-3 border-t border-white/5 pt-3">
 
@@ -1245,6 +1334,7 @@ export default function Dashboard() {
                                         )}
 
                                     </div>
+
                                 </>
                             )}
 
@@ -1252,7 +1342,7 @@ export default function Dashboard() {
 
                         {/* =================================================
                             FOOTER
-                        ================================================= */}
+                        ================================================== */}
 
                         <footer className="px-2 py-6 text-center sm:py-8">
 
@@ -1269,6 +1359,191 @@ export default function Dashboard() {
                 )}
 
             </div>
+
+            {/* =========================================================
+                CREATE PROJECT MODAL
+            ========================================================== */}
+
+            {showCreateModal && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
+                    onMouseDown={(event) => {
+                        if (
+                            event.target ===
+                            event.currentTarget
+                        ) {
+                            closeCreateModal();
+                        }
+                    }}
+                >
+
+                    <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-white/10 bg-slate-950 shadow-[0_0_60px_rgba(0,0,0,0.55)]">
+
+                        {/* MODAL HEADER */}
+
+                        <div className="border-b border-white/10 px-5 py-5 sm:px-6">
+
+                            <div className="flex items-start justify-between gap-4">
+
+                                <div className="flex items-center gap-3">
+
+                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-400/20 bg-cyan-400/10 text-cyan-400">
+                                        ◈
+                                    </div>
+
+                                    <div>
+
+                                        <h2 className="text-lg font-semibold text-white">
+                                            Create New Project
+                                        </h2>
+
+                                        <p className="mt-1 text-xs text-slate-500">
+                                            Add a new API testing project
+                                        </p>
+
+                                    </div>
+
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={closeCreateModal}
+                                    disabled={creatingProject}
+                                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-slate-900 text-lg text-slate-400 transition hover:border-white/20 hover:bg-slate-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    ×
+                                </button>
+
+                            </div>
+
+                        </div>
+
+                        {/* MODAL BODY */}
+
+                        <div className="px-5 py-5 sm:px-6">
+
+                            {/* PROJECT NAME */}
+
+                            <label className="block">
+
+                                <span className="text-sm font-medium text-slate-300">
+
+                                    Project Name
+
+                                    <span className="ml-1 text-red-400">
+                                        *
+                                    </span>
+
+                                </span>
+
+                                <input
+                                    type="text"
+                                    value={projectName}
+                                    onChange={(event) => {
+                                        setProjectName(
+                                            event.target.value
+                                        );
+
+                                        if (
+                                            createProjectError
+                                        ) {
+                                            setCreateProjectError(
+                                                ""
+                                            );
+                                        }
+                                    }}
+                                    onKeyDown={(event) => {
+                                        if (
+                                            event.key ===
+                                                "Enter" &&
+                                            !creatingProject
+                                        ) {
+                                            handleCreateProject();
+                                        }
+                                    }}
+                                    placeholder="Enter the name of the project"
+                                    autoFocus
+                                    className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400/40 focus:ring-2 focus:ring-cyan-400/10"
+                                />
+
+                            </label>
+
+                            {/* DESCRIPTION */}
+
+                            <label className="mt-5 block">
+
+                                <span className="text-sm font-medium text-slate-300">
+
+                                    Description
+
+                                    <span className="ml-1 text-xs text-slate-600">
+                                        (Optional)
+                                    </span>
+
+                                </span>
+
+                                <textarea
+                                    value={projectDescription}
+                                    onChange={(event) =>
+                                        setProjectDescription(
+                                            event.target.value
+                                        )
+                                    }
+                                    placeholder="Enter a short description"
+                                    rows={4}
+                                    className="mt-2 w-full resize-none rounded-xl border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400/40 focus:ring-2 focus:ring-cyan-400/10"
+                                />
+
+                            </label>
+
+                            {/* ERROR */}
+
+                            {createProjectError && (
+                                <div className="mt-4 rounded-xl border border-red-400/20 bg-red-400/5 px-4 py-3">
+
+                                    <p className="text-sm text-red-400">
+                                        {createProjectError}
+                                    </p>
+
+                                </div>
+                            )}
+
+                        </div>
+
+                        {/* MODAL FOOTER */}
+
+                        <div className="flex flex-col-reverse gap-3 border-t border-white/10 bg-slate-950/80 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+
+                            <button
+                                type="button"
+                                onClick={closeCreateModal}
+                                disabled={creatingProject}
+                                className="rounded-xl border border-white/10 bg-slate-900 px-5 py-2.5 text-sm font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={handleCreateProject}
+                                disabled={
+                                    creatingProject ||
+                                    !projectName.trim()
+                                }
+                                className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_0_20px_rgba(37,99,235,0.18)] transition hover:bg-blue-500 hover:shadow-[0_0_25px_rgba(37,99,235,0.3)] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {creatingProject
+                                    ? "Creating..."
+                                    : "Create Project"}
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                </div>
+            )}
+
         </main>
     );
 }
@@ -1314,16 +1589,19 @@ function DashboardCard({
             text: "text-cyan-400",
             glow: "shadow-[0_0_25px_rgba(34,211,238,0.08)]",
         },
+
         blue: {
             box: "border-blue-400/20 bg-blue-400/5",
             text: "text-blue-400",
             glow: "shadow-[0_0_25px_rgba(59,130,246,0.08)]",
         },
+
         violet: {
             box: "border-violet-400/20 bg-violet-400/5",
             text: "text-violet-400",
             glow: "shadow-[0_0_25px_rgba(139,92,246,0.08)]",
         },
+
         orange: {
             box: "border-orange-400/20 bg-orange-400/5",
             text: "text-orange-400",
@@ -1384,12 +1662,14 @@ function SummaryCard({
             text: "text-emerald-400",
             glow: "shadow-[0_0_25px_rgba(16,185,129,0.06)]",
         },
+
         danger: {
             border: "border-red-400/20",
             bg: "bg-red-400/5",
             text: "text-red-400",
             glow: "shadow-[0_0_25px_rgba(239,68,68,0.06)]",
         },
+
         primary: {
             border: "border-cyan-400/20",
             bg: "bg-cyan-400/5",
