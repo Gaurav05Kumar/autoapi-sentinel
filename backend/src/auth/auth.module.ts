@@ -26,10 +26,7 @@ import { PrismaService } from '../prisma/prisma.service';
       useFactory: (
         configService: ConfigService,
       ) => ({
-        secret:
-          configService.get<string>(
-            'JWT_SECRET',
-          ),
+        secret: configService.get<string>('JWT_SECRET'),
 
         signOptions: {
           expiresIn: '7d',
@@ -49,6 +46,7 @@ import { PrismaService } from '../prisma/prisma.service';
 
   exports: [
     AuthService,
+    JwtModule, // ✅ ADD THIS
   ],
 })
 export class AuthModule {}

@@ -89,37 +89,7 @@ export class EndpointsController {
     );
   }
 
-  @Post()
-create(
-  @Param('projectId') projectId: string,
 
-  @Body()
-  body: {
-    name: string;
-    method: string;
-    url: string;
-    headers?: Record<string, string>;
-    body?: Prisma.InputJsonValue;
-    expectedStatus?: number;
-    maxResponseTime?: number;
-    expectedResponseSchema?: Prisma.InputJsonValue;
-  },
-
-  @Req() req: any,
-) {
-  return this.endpointsService.create(
-    projectId,
-    req.user.sub,
-    body.name,
-    body.method,
-    body.url,
-    body.headers,
-    body.body,
-    body.expectedStatus,
-    body.maxResponseTime,
-    body.expectedResponseSchema,
-  );
-}
 
   // ============================================================
   // RUN ENDPOINT TEST
