@@ -82,7 +82,7 @@ export default function Home() {
       if (mode === "register") {
         const response =
           await fetch(
-            "http://localhost:5000/auth/register",
+            `${process.env.NEXT_PUBLIC_API_URL}/auth/register`,
             {
               method: "POST",
 
@@ -135,7 +135,7 @@ export default function Home() {
 
       const response =
         await fetch(
-          "http://localhost:5000/auth/login",
+          `${process.env.NEXT_PUBLIC_API_URL}/auth/login`,
           {
             method: "POST",
 
