@@ -224,7 +224,7 @@ export class EndpointsService {
         const aiResponse =
           await firstValueFrom(
             this.httpService.post(
-              'http://127.0.0.1:8000/analyze',
+              `${process.env.AI_SERVICE_URL}/analyze`,
               {
                 // ------------------------------------------------
                 // Request information
