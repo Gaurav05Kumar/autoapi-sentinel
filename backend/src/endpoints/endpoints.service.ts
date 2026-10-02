@@ -763,7 +763,24 @@ export class EndpointsService {
       }
 
       // ========================================================
-      // 5. FINAL SUCCESS CALCULATION
+      // 5. HTTP ERROR DETECTION
+      // ========================================================
+      // A 4xx/5xx response is an HTTP error even when it matches
+      // the configured expected status. Keep STATUS_CODE as the
+      // primary bug type when the status also mismatches.
+
+      if (statusCode >= 400) {
+        bugDetected = true;
+
+        if (!bugType) {
+          bugType = 'HTTP_ERROR';
+          bugMessage =
+            `API returned HTTP error status ${statusCode}`;
+        }
+      }
+
+      // ========================================================
+      // 6. FINAL SUCCESS CALCULATION
       // ========================================================
 
       const success =
@@ -771,7 +788,7 @@ export class EndpointsService {
         !bugDetected;
 
       // ========================================================
-      // 6. SAVE TEST RESULT
+      // 7. SAVE TEST RESULT
       // ========================================================
 
       const result =
@@ -806,7 +823,7 @@ export class EndpointsService {
         });
 
       // ========================================================
-      // 7. RETURN TEST RESULT
+      // 8. RETURN TEST RESULT
       // ========================================================
 
       return {
