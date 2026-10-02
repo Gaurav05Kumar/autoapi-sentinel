@@ -197,15 +197,18 @@ export class EndpointsService {
         response.status;
 
       // --------------------------------------------------------
-      // HTTP success means 200-399
+      // Deterministic validation
       // --------------------------------------------------------
+      // If an expected status is configured, the actual status
+      // must match it. If no expected status is configured,
+      // status-code validation is skipped.
+      const httpSuccess =
+        endpoint.expectedStatus == null
+          ? true
+          : statusCode === endpoint.expectedStatus;
 
-      const httpSuccess = statusCode === endpoint.expectedStatus;
-
-      // ========================================================
-      // 3. AI SERVICE ANALYSIS
-      // ========================================================
-
+      // Start with deterministic checks so the final result does
+      // not depend on the AI service being available.
       let bugDetected = false;
 
       let bugType: string | null =
@@ -213,6 +216,35 @@ export class EndpointsService {
 
       let bugMessage: string | null =
         null;
+
+      // Expected status mismatch is always a real bug.
+      if (
+        endpoint.expectedStatus != null &&
+        statusCode !== endpoint.expectedStatus
+      ) {
+        bugDetected = true;
+        bugType = 'STATUS_CODE';
+        bugMessage =
+          `Expected status ${endpoint.expectedStatus} but received ${statusCode}`;
+      }
+
+      // Response-time limit is also deterministic.
+      if (
+        endpoint.maxResponseTime != null &&
+        responseTime > endpoint.maxResponseTime
+      ) {
+        bugDetected = true;
+
+        if (!bugType) {
+          bugType = 'RESPONSE_TIME';
+          bugMessage =
+            `Response time ${responseTime}ms exceeded the configured limit of ${endpoint.maxResponseTime}ms`;
+        }
+      }
+
+      // ========================================================
+      // 3. AI SERVICE ANALYSIS
+      // ========================================================
 
       try {
         // ------------------------------------------------------
@@ -272,18 +304,25 @@ export class EndpointsService {
         // Store AI result
         // ------------------------------------------------------
 
-        bugDetected =
-          Boolean(
-            aiAnalysis.bugDetected,
-          );
+        // AI can detect additional issues such as response-schema,
+        // empty-response, or invalid-response problems.
+        // Do not allow an AI "false" result to erase a deterministic
+        // status-code or response-time bug detected above.
+        if (Boolean(aiAnalysis.bugDetected)) {
+          bugDetected = true;
 
-        bugType =
-          aiAnalysis.bugType ??
-          null;
+          if (!bugType) {
+            bugType =
+              aiAnalysis.bugType ??
+              'AI_DETECTED';
+          }
 
-        bugMessage =
-          aiAnalysis.message ??
-          null;
+          if (!bugMessage) {
+            bugMessage =
+              aiAnalysis.message ??
+              'AI service detected an API response issue';
+          }
+        }
       } catch (aiError) {
         // ------------------------------------------------------
         // AI service failure should NOT stop API testing.
