@@ -200,7 +200,7 @@ export class EndpointsService {
       // HTTP success means 200-399
       // --------------------------------------------------------
 
-      const httpSuccess = statusCode === expectedStatusCode;
+      const httpSuccess = statusCode === endpoint.expectedStatus;
 
       // ========================================================
       // 3. AI SERVICE ANALYSIS
