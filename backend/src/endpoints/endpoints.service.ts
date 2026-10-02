@@ -17,6 +17,401 @@ export class EndpointsService {
   ) {}
 
   // ============================================================
+  // RESPONSE SCHEMA VALIDATION
+  // ============================================================
+  //
+  // The frontend stores schemas in the project's custom format:
+  //
+  // {
+  //   "phone": "string",
+  //   "id": "integer"
+  // }
+  //
+  // Every field in the schema is required. Nested objects and arrays
+  // are also supported.
+  // ============================================================
+
+  private validateResponseSchema(
+    expectedSchema: unknown,
+    actualResponse: unknown,
+    path = '',
+  ): Array<{
+    type: string;
+    message: string;
+  }> {
+    const errors: Array<{
+      type: string;
+      message: string;
+    }> = [];
+
+    // ------------------------------------------------------------
+    // Expected schema must be an object at the root.
+    // ------------------------------------------------------------
+
+    if (
+      !expectedSchema ||
+      typeof expectedSchema !== 'object' ||
+      Array.isArray(expectedSchema)
+    ) {
+      errors.push({
+        type: 'SCHEMA_MISMATCH',
+        message:
+          'Expected response schema must be a JSON object',
+      });
+
+      return errors;
+    }
+
+    // ------------------------------------------------------------
+    // Root response must be an object when using a field schema.
+    // ------------------------------------------------------------
+
+    if (
+      !actualResponse ||
+      typeof actualResponse !== 'object' ||
+      Array.isArray(actualResponse)
+    ) {
+      errors.push({
+        type: 'SCHEMA_MISMATCH',
+        message:
+          'Expected API response to be an object for schema validation',
+      });
+
+      return errors;
+    }
+
+    const schema =
+      expectedSchema as Record<string, unknown>;
+
+    const response =
+      actualResponse as Record<string, unknown>;
+
+    // ------------------------------------------------------------
+    // Validate every configured field.
+    // Missing fields are bugs.
+    // ------------------------------------------------------------
+
+    for (const [field, expectedValue] of Object.entries(schema)) {
+      const fieldPath = path
+        ? `${path}.${field}`
+        : field;
+
+      if (!Object.prototype.hasOwnProperty.call(response, field)) {
+        errors.push({
+          type: 'MISSING_FIELD',
+          message:
+            `Required field '${fieldPath}' is missing from response`,
+        });
+
+        continue;
+      }
+
+      const actualValue = response[field];
+
+      // ----------------------------------------------------------
+      // String type
+      // ----------------------------------------------------------
+
+      if (expectedValue === 'string') {
+        if (typeof actualValue !== 'string') {
+          errors.push({
+            type: 'SCHEMA_MISMATCH',
+            message:
+              `Field '${fieldPath}' expected type string but received ${this.getResponseType(actualValue)}`,
+          });
+        }
+
+        continue;
+      }
+
+      // ----------------------------------------------------------
+      // Integer type
+      // ----------------------------------------------------------
+
+      if (expectedValue === 'integer') {
+        if (
+          typeof actualValue !== 'number' ||
+          !Number.isInteger(actualValue)
+        ) {
+          errors.push({
+            type: 'SCHEMA_MISMATCH',
+            message:
+              `Field '${fieldPath}' expected type integer but received ${this.getResponseType(actualValue)}`,
+          });
+        }
+
+        continue;
+      }
+
+      // ----------------------------------------------------------
+      // Number type
+      // ----------------------------------------------------------
+
+      if (expectedValue === 'number') {
+        if (
+          typeof actualValue !== 'number' ||
+          !Number.isFinite(actualValue)
+        ) {
+          errors.push({
+            type: 'SCHEMA_MISMATCH',
+            message:
+              `Field '${fieldPath}' expected type number but received ${this.getResponseType(actualValue)}`,
+          });
+        }
+
+        continue;
+      }
+
+      // ----------------------------------------------------------
+      // Float type
+      // ----------------------------------------------------------
+      // JSON does not preserve a separate integer/float type in
+      // JavaScript, so both are represented as number.
+      // ----------------------------------------------------------
+
+      if (expectedValue === 'float') {
+        if (
+          typeof actualValue !== 'number' ||
+          !Number.isFinite(actualValue)
+        ) {
+          errors.push({
+            type: 'SCHEMA_MISMATCH',
+            message:
+              `Field '${fieldPath}' expected type float but received ${this.getResponseType(actualValue)}`,
+          });
+        }
+
+        continue;
+      }
+
+      // ----------------------------------------------------------
+      // Boolean type
+      // ----------------------------------------------------------
+
+      if (expectedValue === 'boolean') {
+        if (typeof actualValue !== 'boolean') {
+          errors.push({
+            type: 'SCHEMA_MISMATCH',
+            message:
+              `Field '${fieldPath}' expected type boolean but received ${this.getResponseType(actualValue)}`,
+          });
+        }
+
+        continue;
+      }
+
+      // ----------------------------------------------------------
+      // Null type
+      // ----------------------------------------------------------
+
+      if (expectedValue === 'null') {
+        if (actualValue !== null) {
+          errors.push({
+            type: 'SCHEMA_MISMATCH',
+            message:
+              `Field '${fieldPath}' expected type null but received ${this.getResponseType(actualValue)}`,
+          });
+        }
+
+        continue;
+      }
+
+      // ----------------------------------------------------------
+      // Nested object schema
+      // ----------------------------------------------------------
+
+      if (
+        expectedValue &&
+        typeof expectedValue === 'object' &&
+        !Array.isArray(expectedValue)
+      ) {
+        if (
+          !actualValue ||
+          typeof actualValue !== 'object' ||
+          Array.isArray(actualValue)
+        ) {
+          errors.push({
+            type: 'SCHEMA_MISMATCH',
+            message:
+              `Field '${fieldPath}' expected type object but received ${this.getResponseType(actualValue)}`,
+          });
+
+          continue;
+        }
+
+        errors.push(
+          ...this.validateResponseSchema(
+            expectedValue,
+            actualValue,
+            fieldPath,
+          ),
+        );
+
+        continue;
+      }
+
+      // ----------------------------------------------------------
+      // Array schema
+      // ----------------------------------------------------------
+
+      if (Array.isArray(expectedValue)) {
+        if (!Array.isArray(actualValue)) {
+          errors.push({
+            type: 'SCHEMA_MISMATCH',
+            message:
+              `Field '${fieldPath}' expected type array but received ${this.getResponseType(actualValue)}`,
+          });
+
+          continue;
+        }
+
+        // Empty array means only validate that the response is an array.
+        if (expectedValue.length === 0) {
+          continue;
+        }
+
+        const itemSchema = expectedValue[0];
+
+        actualValue.forEach((item, index) => {
+          const itemPath =
+            `${fieldPath}[${index}]`;
+
+          // Primitive item type.
+          if (typeof itemSchema === 'string') {
+            if (
+              !this.matchesResponseType(
+                item,
+                itemSchema,
+              )
+            ) {
+              errors.push({
+                type: 'SCHEMA_MISMATCH',
+                message:
+                  `Field '${itemPath}' expected type ${itemSchema} but received ${this.getResponseType(item)}`,
+              });
+            }
+
+            return;
+          }
+
+          // Nested object item schema.
+          if (
+            itemSchema &&
+            typeof itemSchema === 'object' &&
+            !Array.isArray(itemSchema)
+          ) {
+            if (
+              !item ||
+              typeof item !== 'object' ||
+              Array.isArray(item)
+            ) {
+              errors.push({
+                type: 'SCHEMA_MISMATCH',
+                message:
+                  `Field '${itemPath}' expected type object but received ${this.getResponseType(item)}`,
+              });
+
+              return;
+            }
+
+            errors.push(
+              ...this.validateResponseSchema(
+                itemSchema,
+                item,
+                itemPath,
+              ),
+            );
+
+            return;
+          }
+
+          errors.push({
+            type: 'SCHEMA_MISMATCH',
+            message:
+              `Unsupported schema definition at '${itemPath}'`,
+          });
+        });
+
+        continue;
+      }
+
+      // ----------------------------------------------------------
+      // Unsupported schema definition
+      // ----------------------------------------------------------
+
+      errors.push({
+        type: 'SCHEMA_MISMATCH',
+        message:
+          `Unsupported schema definition for field '${fieldPath}'`,
+      });
+    }
+
+    return errors;
+  }
+
+  private matchesResponseType(
+    value: unknown,
+    expectedType: string,
+  ): boolean {
+    switch (expectedType) {
+      case 'string':
+        return typeof value === 'string';
+
+      case 'integer':
+        return (
+          typeof value === 'number' &&
+          Number.isInteger(value)
+        );
+
+      case 'number':
+      case 'float':
+        return (
+          typeof value === 'number' &&
+          Number.isFinite(value)
+        );
+
+      case 'boolean':
+        return typeof value === 'boolean';
+
+      case 'null':
+        return value === null;
+
+      case 'object':
+        return (
+          value !== null &&
+          typeof value === 'object' &&
+          !Array.isArray(value)
+        );
+
+      case 'array':
+        return Array.isArray(value);
+
+      default:
+        return false;
+    }
+  }
+
+  private getResponseType(
+    value: unknown,
+  ): string {
+    if (value === null) {
+      return 'null';
+    }
+
+    if (Array.isArray(value)) {
+      return 'array';
+    }
+
+    if (typeof value === 'number') {
+      return Number.isInteger(value)
+        ? 'integer'
+        : 'number';
+    }
+
+    return typeof value;
+  }
+
+  // ============================================================
   // CREATE ENDPOINT
   // ============================================================
 
@@ -243,7 +638,38 @@ export class EndpointsService {
       }
 
       // ========================================================
-      // 3. AI SERVICE ANALYSIS
+      // 3. RESPONSE SCHEMA VALIDATION
+      // ========================================================
+      //
+      // Schema validation is deterministic and must not depend on
+      // the AI service. This catches missing fields and wrong types
+      // even when the AI service is unavailable or returns false.
+      // ========================================================
+
+      if (endpoint.expectedResponseSchema != null) {
+        const schemaErrors =
+          this.validateResponseSchema(
+            endpoint.expectedResponseSchema,
+            response.data,
+          );
+
+        if (schemaErrors.length > 0) {
+          bugDetected = true;
+
+          if (!bugType) {
+            bugType = schemaErrors[0].type;
+          }
+
+          if (!bugMessage) {
+            bugMessage = schemaErrors
+              .map((error) => error.message)
+              .join('. ');
+          }
+        }
+      }
+
+      // ========================================================
+      // 4. AI SERVICE ANALYSIS
       // ========================================================
 
       try {
@@ -337,7 +763,7 @@ export class EndpointsService {
       }
 
       // ========================================================
-      // 4. FINAL SUCCESS CALCULATION
+      // 5. FINAL SUCCESS CALCULATION
       // ========================================================
 
       const success =
@@ -345,7 +771,7 @@ export class EndpointsService {
         !bugDetected;
 
       // ========================================================
-      // 5. SAVE TEST RESULT
+      // 6. SAVE TEST RESULT
       // ========================================================
 
       const result =
@@ -380,7 +806,7 @@ export class EndpointsService {
         });
 
       // ========================================================
-      // 6. RETURN TEST RESULT
+      // 7. RETURN TEST RESULT
       // ========================================================
 
       return {
